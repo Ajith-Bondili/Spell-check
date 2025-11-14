@@ -1,0 +1,51 @@
+{
+  "manifest_version": 3,
+  "name": "Local Autocorrect",
+  "version": "0.1.0",
+  "description": "Privacy-first, context-aware autocorrect that runs completely offline",
+
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+
+  "host_permissions": [
+    "http://127.0.0.1:8080/*"
+  ],
+
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content.js"],
+      "run_at": "document_end",
+      "all_frames": true
+    }
+  ],
+
+  "action": {
+    "default_popup": "public/popup.html",
+    "default_icon": {
+      "16": "public/icon16.svg",
+      "48": "public/icon48.svg",
+      "128": "public/icon128.svg"
+    }
+  },
+
+  "icons": {
+    "16": "public/icon16.svg",
+    "48": "public/icon48.svg",
+    "128": "public/icon128.svg"
+  },
+
+  "web_accessible_resources": [
+    {
+      "resources": ["public/*"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
