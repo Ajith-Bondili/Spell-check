@@ -51,18 +51,22 @@ go run ./cmd/server/main.go
 
 ## Current Status
 
-✅ **Phase 1-4 Complete**:
-- SymSpell spell checker (7ms dictionary load, <1ms lookups)
+✅ **Phase 1-6 Complete**:
+- SymSpell spell checker (0.7ms dictionary load, <1ms lookups)
 - HTTP API server with /spell and /rescore endpoints
 - Browser extension with real-time monitoring
+- **Context-aware correction** (their/there/they're, your/you're, etc.)
+- **Intelligent guardrails** (protects URLs, code, emails, passwords)
 - Auto-correct for high confidence (>90%)
 - Suggestions for medium confidence (>50%)
+- 11 test suites, 29 tests, 100% passing
 
 🚧 **Coming Next**:
-- LLM integration for context-aware corrections
-- Guardrails (URLs, code, passwords)
+- LLM integration (Ollama) for complex cases
+- Expanded confusables database
 - User dictionary & custom words
-- Performance optimization
+- Statistics dashboard
+- Performance optimization & caching
 
 ## Performance
 
@@ -78,6 +82,8 @@ go run ./cmd/server/main.go
 │   ├── cmd/server/      # Main entry point
 │   ├── internal/
 │   │   ├── spellcheck/  # SymSpell implementation
+│   │   ├── llm/         # Context analyzer & confusables
+│   │   ├── guardrails/  # URL/code/email protection
 │   │   ├── api/         # HTTP handlers
 │   │   └── types/       # Data structures
 │   └── data/            # Dictionary files
