@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Ajith-Bondili/spell-check/internal/guardrails"
 	"github.com/Ajith-Bondili/spell-check/internal/llm"
 	"github.com/Ajith-Bondili/spell-check/internal/spellcheck"
 	"github.com/Ajith-Bondili/spell-check/internal/types"
@@ -15,6 +16,7 @@ import (
 type Server struct {
 	spellChecker    *spellcheck.SymSpell
 	contextAnalyzer *llm.ContextAnalyzer
+	guardrails      *guardrails.Guardrails
 	config          *types.Config
 }
 
@@ -23,6 +25,7 @@ func NewServer(spellChecker *spellcheck.SymSpell, config *types.Config) *Server 
 	return &Server{
 		spellChecker:    spellChecker,
 		contextAnalyzer: llm.NewContextAnalyzer(),
+		guardrails:      guardrails.NewGuardrails(),
 		config:          config,
 	}
 }
@@ -49,6 +52,21 @@ func (s *Server) SpellHandler(w http.ResponseWriter, r *http.Request) {
 	// Validate input
 	if req.Text == "" {
 		http.Error(w, "Text field is required", http.StatusBadRequest)
+		return
+	}
+
+	// Check guardrails - skip correction if inappropriate
+	if skip, reason := s.guardrails.ShouldSkipWord(req.Text, req.Context); skip {
+		// Return empty response - no correction needed
+		response := types.CorrectionResponse{
+			Original:         req.Text,
+			Candidates:       []types.Candidate{},
+			ProcessingTimeMs: time.Since(startTime).Milliseconds(),
+		}
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Skip-Reason", reason) // Add skip reason to header for debugging
+		json.NewEncoder(w).Encode(response)
 		return
 	}
 
@@ -114,6 +132,35 @@ func (s *Server) RescoreHandler(w http.ResponseWriter, r *http.Request) {
 	// Validate input
 	if req.Text == "" || req.Context == "" {
 		http.Error(w, "Text and context fields are required", http.StatusBadRequest)
+		return
+	}
+
+	// Check guardrails - skip if inappropriate context
+	if skip, reason := s.guardrails.ShouldSkipContext(req.Context); skip {
+		// Return empty response
+		response := types.CorrectionResponse{
+			Original:         req.Text,
+			Candidates:       []types.Candidate{},
+			ProcessingTimeMs: time.Since(startTime).Milliseconds(),
+		}
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Skip-Reason", reason)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	// Check individual word guardrails
+	if skip, reason := s.guardrails.ShouldSkipWord(req.Text, req.Context); skip {
+		response := types.CorrectionResponse{
+			Original:         req.Text,
+			Candidates:       []types.Candidate{},
+			ProcessingTimeMs: time.Since(startTime).Milliseconds(),
+		}
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Skip-Reason", reason)
+		json.NewEncoder(w).Encode(response)
 		return
 	}
 

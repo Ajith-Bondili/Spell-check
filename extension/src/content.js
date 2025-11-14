@@ -97,6 +97,12 @@ function isTextInput(element) {
     // Regular inputs
     if (element.tagName === 'INPUT') {
         const type = element.type.toLowerCase();
+
+        // SECURITY: Never autocorrect password fields!
+        if (type === 'password') {
+            return false;
+        }
+
         return type === 'text' || type === 'search' || type === 'email' || type === '';
     }
 
