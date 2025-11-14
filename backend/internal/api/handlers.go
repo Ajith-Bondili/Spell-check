@@ -6,21 +6,24 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Ajith-Bondili/spell-check/internal/llm"
 	"github.com/Ajith-Bondili/spell-check/internal/spellcheck"
 	"github.com/Ajith-Bondili/spell-check/internal/types"
 )
 
 // Server holds our API dependencies
 type Server struct {
-	spellChecker *spellcheck.SymSpell
-	config       *types.Config
+	spellChecker    *spellcheck.SymSpell
+	contextAnalyzer *llm.ContextAnalyzer
+	config          *types.Config
 }
 
 // NewServer creates a new API server
 func NewServer(spellChecker *spellcheck.SymSpell, config *types.Config) *Server {
 	return &Server{
-		spellChecker: spellChecker,
-		config:       config,
+		spellChecker:    spellChecker,
+		contextAnalyzer: llm.NewContextAnalyzer(),
+		config:          config,
 	}
 }
 
@@ -117,18 +120,23 @@ func (s *Server) RescoreHandler(w http.ResponseWriter, r *http.Request) {
 	// Step 1: Get fast suggestions from SymSpell
 	candidates := s.spellChecker.Lookup(req.Text)
 
-	// Step 2: Use LLM to rescore based on context
-	// TODO: This will call the LLM layer when we implement it
-	// For now, just return the fast layer results
+	// Step 1.5: Add confusable words to candidates
+	// This is CRITICAL for catching real-word errors
+	// E.g., "there" might be correct spelling but wrong in "there house"
+	candidatesWithConfusables := s.contextAnalyzer.AddConfusableCandidates(req.Text, candidates)
+
+	// Step 2: Use context analyzer to rescore based on context
+	// This handles real-word errors like their/there/they're
+	rescored := s.contextAnalyzer.AnalyzeContext(req.Text, req.Context, candidatesWithConfusables)
 
 	// Build response
 	response := types.CorrectionResponse{
 		Original:   req.Text,
-		Candidates: candidates,
+		Candidates: rescored,
 	}
 
-	if len(candidates) > 0 {
-		topCandidate := candidates[0]
+	if len(rescored) > 0 {
+		topCandidate := rescored[0]
 
 		// For now, use same logic as fast layer
 		// Later, we'll use LLM confidence scores

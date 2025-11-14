@@ -67,4 +67,21 @@ weird 912345678
 conscience 123456780
 embarrass 234567892
 
+# Common confusables (real-word errors)
+they're 800000000
+theyre 100
+your 987000000
+you're 654000000
+youre 200
+its 890000000
+it's 765000000
+too 890000000
+two 987000000
+than 876000000
+then 987000000
+lose 456000000
+loose 234000000
+affect 345000000
+effect 456000000
+
 # Common typos removed - these should be corrected, not in dictionary!
