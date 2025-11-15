@@ -233,21 +233,43 @@ func (ca *ContextAnalyzer) AnalyzeContext(word string, context string, candidate
 	word = strings.ToLower(strings.TrimSpace(word))
 	context = strings.ToLower(context)
 
-	// Check if this word has confusables
-	confusables, hasConfusables := ca.confusables[word]
-	if !hasConfusables {
-		// Try checking if any candidate is a confusable
+	// Check if the INPUT word itself is a confusable
+	// This is CRITICAL: we should only apply confusable logic if the user
+	// typed a word that's part of a confusable group
+	confusables, isInputConfusable := ca.confusables[word]
+
+	// If the input word is NOT a confusable, only apply confusable logic
+	// if the word appears to be a typo (edit distance > 0)
+	if !isInputConfusable {
+		// Check if word appears in dictionary (edit distance 0)
+		wordInDictionary := false
 		for _, candidate := range candidates {
-			if _, found := ca.confusables[candidate.Word]; found {
-				confusables = ca.confusables[candidate.Word]
-				hasConfusables = true
+			if candidate.Word == word && candidate.EditDistance == 0 {
+				wordInDictionary = true
 				break
 			}
 		}
-	}
 
-	if !hasConfusables {
-		return candidates // No context analysis needed
+		// If word is in dictionary (correctly spelled), don't apply confusable logic
+		// This prevents "the" from being penalized when "then" is a candidate
+		if wordInDictionary {
+			return candidates
+		}
+
+		// Word is NOT in dictionary (likely a typo)
+		// Check if any candidate is a confusable
+		hasConfusableCandidate := false
+		for _, candidate := range candidates {
+			if _, found := ca.confusables[candidate.Word]; found {
+				confusables = ca.confusables[candidate.Word]
+				hasConfusableCandidate = true
+				break
+			}
+		}
+
+		if !hasConfusableCandidate {
+			return candidates // No confusables to analyze
+		}
 	}
 
 	// Score each confusable based on context
@@ -257,7 +279,6 @@ func (ca *ContextAnalyzer) AnalyzeContext(word string, context string, candidate
 	}
 
 	// Adjust candidate confidences based on context scores
-	// (hasConfusables was already determined above)
 	result := make([]types.Candidate, len(candidates))
 
 	for i, candidate := range candidates {
@@ -271,11 +292,13 @@ func (ca *ContextAnalyzer) AnalyzeContext(word string, context string, candidate
 			// "they" has better edit distance
 			blendedConfidence := (contextScore * 0.85) + (candidate.Confidence * 0.15)
 			result[i].Confidence = blendedConfidence
-		} else if hasConfusables {
+		} else {
 			// If confusables exist but this isn't one of them,
 			// it's probably a spelling mistake rather than context error
-			// Penalize it to give confusables a chance
-			result[i].Confidence = candidate.Confidence * 0.55
+			// Only apply penalty if the input word is a confusable
+			if isInputConfusable {
+				result[i].Confidence = candidate.Confidence * 0.55
+			}
 		}
 	}
 

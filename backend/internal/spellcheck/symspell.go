@@ -239,38 +239,42 @@ func (s *SymSpell) calculateConfidence(editDist int, frequency int64) float64 {
 	case 0:
 		baseConfidence = 1.0 // Perfect match
 	case 1:
-		baseConfidence = 0.85 // One character off
+		baseConfidence = 0.70 // One character off (high confidence for single typos)
 	case 2:
-		baseConfidence = 0.65 // Two characters off
+		baseConfidence = 0.45 // Two characters off (more conservative)
 	default:
-		baseConfidence = 0.3 // Further away
+		baseConfidence = 0.20 // Further away
 	}
 
 	// Boost confidence for high-frequency words
-	// Very common words (top 100) get a big boost
-	// This helps catch common typos like "teh" → "the"
+	// Balanced to catch obvious typos without being too aggressive
 	frequencyBoost := 0.0
-	if frequency > 1000000000 {
-		// Top ~100 most common words (like "the", "be", "and")
-		frequencyBoost = 0.30
+	if frequency > 5000000000 {
+		// Top ~10 most common words (like "the", "be", "and", "of")
+		// These get the biggest boost - typos are extremely likely
+		frequencyBoost = 0.32
+	} else if frequency > 1000000000 {
+		// Top ~100 most common words
+		frequencyBoost = 0.24
 	} else if frequency > 100000000 {
 		// Top ~500 words
-		frequencyBoost = 0.20
+		frequencyBoost = 0.16
 	} else if frequency > 10000000 {
 		// Top ~2000 words
-		frequencyBoost = 0.15
+		frequencyBoost = 0.10
 	} else if frequency > 1000000 {
 		// Common words
-		frequencyBoost = 0.10
-	} else if frequency > 100000 {
 		frequencyBoost = 0.05
+	} else if frequency > 100000 {
+		frequencyBoost = 0.02
 	}
 
 	confidence := baseConfidence + frequencyBoost
 
-	// Cap at 1.0
-	if confidence > 1.0 {
-		confidence = 1.0
+	// Cap at 0.95 for non-exact matches
+	// This prevents typos from being "too confident"
+	if editDist > 0 && confidence > 0.95 {
+		confidence = 0.95
 	}
 
 	return confidence

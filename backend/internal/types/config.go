@@ -19,11 +19,12 @@ func DefaultConfig() *Config {
 		ContextLength: 512, // Keep it small for speed
 		UseGPU:        false, // CPU-only for now
 
-		// Thresholds based on testing
-		// 0.9 = very confident, auto-correct immediately
-		// 0.5 = somewhat confident, show as suggestion
-		AutoCorrectThreshold: 0.9,
-		SuggestionThreshold:  0.5,
+		// Thresholds based on testing (updated after conservative confidence scoring)
+		// 0.75 = high confidence, auto-correct immediately (e.g., "teh" → "the" = 0.77)
+		// 0.50 = medium confidence, show as suggestion only
+		// < 0.50 = too uncertain, ignore
+		AutoCorrectThreshold: 0.75,
+		SuggestionThreshold:  0.50,
 	}
 }
 
