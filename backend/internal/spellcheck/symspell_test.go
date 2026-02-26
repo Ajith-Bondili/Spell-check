@@ -145,6 +145,24 @@ func TestLoadDictionary(t *testing.T) {
 	})
 }
 
+func TestRemoveWord(t *testing.T) {
+	ss := NewSymSpell(2)
+	ss.AddWord("localbrandname", 1500000)
+
+	results := ss.Lookup("localbrandname")
+	if len(results) == 0 || results[0].Word != "localbrandname" {
+		t.Fatalf("expected added word to appear in lookup, got %+v", results)
+	}
+
+	ss.RemoveWord("localbrandname")
+	results = ss.Lookup("localbrandname")
+	for _, candidate := range results {
+		if candidate.Word == "localbrandname" {
+			t.Fatalf("word should have been removed, got candidates %+v", results)
+		}
+	}
+}
+
 // Helper to get first N elements
 func min3(a, b int) int {
 	if a < b {
