@@ -4,6 +4,14 @@ A privacy-first autocorrect system that runs fully on localhost.
 
 No cloud calls. No remote model dependency. Fast typo correction + rule-based context disambiguation.
 
+## v0.3 Highlight Features
+
+- Time-travel undo chip for auto-corrections (`Undo`, `Always Keep Word`, `Never Replace Pair`)
+- Undo hotkey: `Ctrl/Cmd + Shift + Backspace`
+- Per-domain profiles (different behavior for docs/chat/mail)
+- Correction journal + explicit undo API
+- Pain-point insights API (undone pairs, skip reasons, per-domain volume)
+
 ## What’s Implemented
 
 ### Backend (Go)
@@ -11,17 +19,22 @@ No cloud calls. No remote model dependency. Fast typo correction + rule-based co
 - Context-aware rescoring for confusables (`/rescore`)
 - Guardrails for URLs, code-like text, emails, numbers, hashtags, mentions
 - Runtime settings API (`/settings`)
+- Profile APIs (`/profiles`, `/profiles/default`, `/profiles/domain/{domain}`)
 - User dictionary + ignore rules API (`/dictionary`, `/dictionary/words`, `/dictionary/ignore`)
 - Stats + feedback APIs (`/stats`, `/stats/reset`, `/feedback`)
+- Applied-correction + undo APIs (`/corrections/applied`, `/undo`)
+- Insight API (`/insights/pain-points`)
 - Persistent JSON state store (`backend/data/state`)
 
 ### Extension (Manifest V3)
 - Real-time correction on text fields + contenteditable elements
 - Background service worker as API control plane
 - Live settings sync from popup
+- Domain profile editor in popup
 - Custom-word management from popup
 - Ignore rules from popup
 - Live stats + reset + backend reload controls from popup
+- Undo chip and trust controls in-page (keep word / block pair)
 
 ## Quick Start
 
@@ -54,6 +67,15 @@ Runtime control:
 - `GET /stats`
 - `POST /stats/reset`
 - `POST /feedback`
+- `GET /profiles`
+- `GET /profiles/default`
+- `PUT /profiles/default`
+- `GET /profiles/domain/{domain}`
+- `PUT /profiles/domain/{domain}`
+- `DELETE /profiles/domain/{domain}`
+- `POST /corrections/applied`
+- `POST /undo`
+- `GET /insights/pain-points`
 - `POST /reload`
 
 See full examples in [docs/API.md](docs/API.md).

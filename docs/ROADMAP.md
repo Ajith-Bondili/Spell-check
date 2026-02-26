@@ -1,6 +1,6 @@
 # Roadmap
 
-## Completed in v0.2
+## Completed in v0.3
 
 - JSON-backed persistent runtime state
 - Settings API and decision modes
@@ -8,6 +8,10 @@
 - Ignore word/pair rules
 - Stats and feedback endpoints
 - Extension popup controls wired to backend
+- Per-domain profile overrides
+- Undo journal and undo endpoint
+- In-page undo chip + trust controls
+- Pain-point insights endpoint and popup view
 
 ## Next Priorities
 
@@ -18,12 +22,12 @@
 2. Stronger context scoring
 - richer pattern groups
 - weighted neighboring-token windows
-- per-domain correction profiles
+- phrase-level context windows
 
 3. UX improvements
-- in-page inline suggestion chips
-- undo after auto-correct
+- richer inline suggestion chips
 - keyboard shortcut customization
+- domain profile templates
 
 4. Performance and reliability
 - request coalescing/debounce tuning

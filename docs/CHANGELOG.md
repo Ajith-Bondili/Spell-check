@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.3.0
+
+### Added
+- Per-domain profile system with APIs:
+  - `GET /profiles`
+  - `GET/PUT /profiles/default`
+  - `GET/PUT/DELETE /profiles/domain/{domain}`
+- Correction journal and undo APIs:
+  - `POST /corrections/applied`
+  - `POST /undo`
+- Pain-point insights API:
+  - `GET /insights/pain-points`
+- Response metadata additions:
+  - `correction_id`
+  - `explanation`
+  - `undo_ttl_ms`
+- Undo UX in content script:
+  - time-travel undo chip
+  - one-click trust controls (keep word / block pair)
+  - hotkey undo (`Ctrl/Cmd + Shift + Backspace`)
+- Popup domain-profile controls and pain-point insight panel
+
+### Changed
+- Correction requests now support `domain`, `session_id`, and `cursor_token`
+- Backend decisions now resolve by per-domain profile before fallback to default
+- Skip telemetry now tracks skip reasons
+
 ## 0.2.0
 
 ### Added

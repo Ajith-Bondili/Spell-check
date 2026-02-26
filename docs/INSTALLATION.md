@@ -42,10 +42,17 @@ From popup:
 - toggle enable/disable
 - switch mode (`conservative`, `aggressive`, `suggestions_only`)
 - adjust thresholds
+- configure per-domain profile overrides
 - add/remove custom words
 - add ignore word or ignore pair
 - inspect/reset stats
+- inspect pain-point insights
 - reload backend state
+
+In-page while typing:
+- auto-correct undo chip appears after auto-fixes
+- quick actions: Undo, Always Keep Word, Never Replace Pair
+- keyboard undo: `Ctrl/Cmd + Shift + Backspace`
 
 ## Troubleshooting
 
