@@ -8,6 +8,7 @@ import (
 
 	"github.com/Ajith-Bondili/spell-check/internal/api"
 	"github.com/Ajith-Bondili/spell-check/internal/spellcheck"
+	"github.com/Ajith-Bondili/spell-check/internal/storage"
 	"github.com/Ajith-Bondili/spell-check/internal/types"
 )
 
@@ -30,13 +31,36 @@ func main() {
 	}
 	fmt.Printf("✅ Dictionary loaded in %v\n", time.Since(startTime))
 
+	// Initialize persistent runtime state
+	defaultSettings := storage.Settings{
+		Enabled:              true,
+		Mode:                 config.DefaultMode,
+		AutoCorrectThreshold: config.AutoCorrectThreshold,
+		SuggestionThreshold:  config.SuggestionThreshold,
+		MaxSuggestions:       config.MaxSuggestions,
+	}
+	store, err := storage.NewStore(config.StateDir, defaultSettings)
+	if err != nil {
+		log.Fatalf("❌ Failed to initialize state store: %v", err)
+	}
+	fmt.Printf("✅ State store initialized (%s)\n", config.StateDir)
+
 	// Create API server
-	server := api.NewServer(spellChecker, config)
+	server := api.NewServer(spellChecker, config, store)
 
 	// Setup routes
 	http.HandleFunc("/health", api.CORSMiddleware(server.HealthHandler))
 	http.HandleFunc("/spell", api.CORSMiddleware(server.SpellHandler))
 	http.HandleFunc("/rescore", api.CORSMiddleware(server.RescoreHandler))
+	http.HandleFunc("/settings", api.CORSMiddleware(server.SettingsHandler))
+	http.HandleFunc("/dictionary", api.CORSMiddleware(server.DictionaryHandler))
+	http.HandleFunc("/dictionary/words", api.CORSMiddleware(server.DictionaryWordsHandler))
+	http.HandleFunc("/dictionary/words/", api.CORSMiddleware(server.DictionaryWordsHandler))
+	http.HandleFunc("/dictionary/ignore", api.CORSMiddleware(server.DictionaryIgnoreHandler))
+	http.HandleFunc("/stats", api.CORSMiddleware(server.StatsHandler))
+	http.HandleFunc("/stats/reset", api.CORSMiddleware(server.StatsResetHandler))
+	http.HandleFunc("/feedback", api.CORSMiddleware(server.FeedbackHandler))
+	http.HandleFunc("/reload", api.CORSMiddleware(server.ReloadHandler))
 
 	// Start server
 	addr := fmt.Sprintf("%s:%d", config.Host, config.Port)
@@ -45,6 +69,10 @@ func main() {
 	fmt.Println("   GET  /health  - Health check")
 	fmt.Println("   POST /spell   - Fast spell check (on space)")
 	fmt.Println("   POST /rescore - Context-aware correction (on punctuation)")
+	fmt.Println("   GET  /settings / PUT /settings")
+	fmt.Println("   GET  /dictionary / POST /dictionary/words / DELETE /dictionary/words/{word}")
+	fmt.Println("   POST /dictionary/ignore / GET /stats / POST /stats/reset")
+	fmt.Println("   POST /feedback / POST /reload")
 	fmt.Println("")
 	fmt.Println("💡 Press Ctrl+C to stop")
 	fmt.Println("")

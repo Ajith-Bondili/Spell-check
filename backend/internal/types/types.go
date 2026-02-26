@@ -49,6 +49,18 @@ type CorrectionResponse struct {
 
 	// Processing time in milliseconds (for debugging)
 	ProcessingTimeMs int64 `json:"processing_time_ms"`
+
+	// Which correction source produced this response (spell, rescore, skip)
+	Source string `json:"source,omitempty"`
+
+	// High-level reason for the final decision
+	Reason string `json:"reason,omitempty"`
+
+	// Decision mode used for this request
+	DecisionMode string `json:"decision_mode,omitempty"`
+
+	// True if the request was intentionally skipped
+	Skipped bool `json:"skipped"`
 }
 
 // Config holds application configuration

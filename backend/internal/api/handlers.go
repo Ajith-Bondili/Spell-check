@@ -2,234 +2,315 @@ package api
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
+	"sort"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/Ajith-Bondili/spell-check/internal/guardrails"
 	"github.com/Ajith-Bondili/spell-check/internal/llm"
 	"github.com/Ajith-Bondili/spell-check/internal/spellcheck"
+	"github.com/Ajith-Bondili/spell-check/internal/storage"
 	"github.com/Ajith-Bondili/spell-check/internal/types"
 )
 
-// Server holds our API dependencies
+const apiVersion = "0.2.0"
+
+// Server holds API dependencies.
 type Server struct {
 	spellChecker    *spellcheck.SymSpell
 	contextAnalyzer *llm.ContextAnalyzer
 	guardrails      *guardrails.Guardrails
+	store           *storage.Store
 	config          *types.Config
+
+	spellMu     sync.RWMutex
+	customWords map[string]int64
 }
 
-// NewServer creates a new API server
-func NewServer(spellChecker *spellcheck.SymSpell, config *types.Config) *Server {
-	return &Server{
+// NewServer creates a new API server.
+func NewServer(spellChecker *spellcheck.SymSpell, config *types.Config, store *storage.Store) *Server {
+	server := &Server{
 		spellChecker:    spellChecker,
 		contextAnalyzer: llm.NewContextAnalyzer(),
 		guardrails:      guardrails.NewGuardrails(),
+		store:           store,
 		config:          config,
+		customWords:     make(map[string]int64),
 	}
+	server.syncCustomDictionaryFromStore()
+	return server
 }
 
-// SpellHandler handles the /spell endpoint (fast layer)
-// This is called on SPACE - must be blazingly fast (<50ms)
+// SpellHandler handles fast spell checks.
 func (s *Server) SpellHandler(w http.ResponseWriter, r *http.Request) {
-	// Start timing for performance monitoring
-	startTime := time.Now()
+	start := time.Now()
 
-	// Only accept POST requests
 	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 
-	// Parse request body
 	var req types.CorrectionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("Invalid request: %v", err), http.StatusBadRequest)
+		_ = s.store.RecordError()
+		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	req.Text = normalizeWord(req.Text)
+	req.Context = strings.TrimSpace(req.Context)
 
-	// Validate input
 	if req.Text == "" {
-		http.Error(w, "Text field is required", http.StatusBadRequest)
+		_ = s.store.RecordError()
+		writeError(w, http.StatusBadRequest, "text field is required")
 		return
 	}
 
-	// Check guardrails - skip correction if inappropriate
+	_ = s.store.RecordSpellRequest()
+	settings := s.store.GetSettings()
+
+	if !settings.Enabled {
+		writeJSON(w, http.StatusOK, s.skipResponse(req.Text, "spell", settings.Mode, "disabled", start))
+		return
+	}
+	if s.store.IsWordIgnored(req.Text) {
+		writeJSON(w, http.StatusOK, s.skipResponse(req.Text, "spell", settings.Mode, "ignored_word", start))
+		return
+	}
 	if skip, reason := s.guardrails.ShouldSkipWord(req.Text, req.Context); skip {
-		// Return empty response - no correction needed
-		response := types.CorrectionResponse{
-			Original:         req.Text,
-			Candidates:       []types.Candidate{},
-			ProcessingTimeMs: time.Since(startTime).Milliseconds(),
-		}
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("X-Skip-Reason", reason) // Add skip reason to header for debugging
-		json.NewEncoder(w).Encode(response)
+		writeJSON(w, http.StatusOK, s.skipResponse(req.Text, "spell", settings.Mode, reason, start))
 		return
 	}
 
-	// Lookup suggestions
-	candidates := s.spellChecker.Lookup(req.Text)
+	candidates := s.lookup(req.Text)
+	candidates = s.applyStoreSignals(req.Text, candidates, settings)
 
-	// Build response
-	response := types.CorrectionResponse{
-		Original:   req.Text,
-		Candidates: candidates,
-	}
-
-	// If we have a high-confidence candidate, mark for auto-correct
-	if len(candidates) > 0 {
-		topCandidate := candidates[0]
-
-		// Only auto-correct if:
-		// 1. Confidence is high enough
-		// 2. It's not the original word (no change needed)
-		if topCandidate.Confidence >= s.config.AutoCorrectThreshold &&
-			topCandidate.Word != req.Text {
-			response.BestCandidate = &topCandidate
-			response.ShouldAutoCorrect = true
-		} else if topCandidate.Confidence >= s.config.SuggestionThreshold &&
-			topCandidate.Word != req.Text {
-			// Show as suggestion (user can tab to accept)
-			response.BestCandidate = &topCandidate
-			response.ShouldAutoCorrect = false
-		}
-	}
-
-	// Calculate processing time
-	response.ProcessingTimeMs = time.Since(startTime).Milliseconds()
-
-	// Set CORS headers (so browser extension can call us)
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-	w.Header().Set("Content-Type", "application/json")
-
-	// Send response
-	json.NewEncoder(w).Encode(response)
+	resp := s.decide(req.Text, candidates, settings, "spell")
+	resp.ProcessingTimeMs = time.Since(start).Milliseconds()
+	writeJSON(w, http.StatusOK, resp)
 }
 
-// RescoreHandler handles the /rescore endpoint (smart layer with LLM)
-// This is called on PUNCTUATION or PAUSE - can be slower (~200-300ms)
+// RescoreHandler handles context-aware checks.
 func (s *Server) RescoreHandler(w http.ResponseWriter, r *http.Request) {
-	startTime := time.Now()
+	start := time.Now()
 
-	// Only accept POST requests
 	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 
-	// Parse request body
 	var req types.CorrectionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("Invalid request: %v", err), http.StatusBadRequest)
+		_ = s.store.RecordError()
+		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
-	// Validate input
+	req.Text = normalizeWord(req.Text)
+	req.Context = strings.TrimSpace(req.Context)
 	if req.Text == "" || req.Context == "" {
-		http.Error(w, "Text and context fields are required", http.StatusBadRequest)
+		_ = s.store.RecordError()
+		writeError(w, http.StatusBadRequest, "text and context fields are required")
 		return
 	}
 
-	// Check guardrails - skip if inappropriate context
+	_ = s.store.RecordRescoreRequest()
+	settings := s.store.GetSettings()
+
+	if !settings.Enabled {
+		writeJSON(w, http.StatusOK, s.skipResponse(req.Text, "rescore", settings.Mode, "disabled", start))
+		return
+	}
+	if s.store.IsWordIgnored(req.Text) {
+		writeJSON(w, http.StatusOK, s.skipResponse(req.Text, "rescore", settings.Mode, "ignored_word", start))
+		return
+	}
 	if skip, reason := s.guardrails.ShouldSkipContext(req.Context); skip {
-		// Return empty response
-		response := types.CorrectionResponse{
-			Original:         req.Text,
-			Candidates:       []types.Candidate{},
-			ProcessingTimeMs: time.Since(startTime).Milliseconds(),
-		}
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("X-Skip-Reason", reason)
-		json.NewEncoder(w).Encode(response)
+		writeJSON(w, http.StatusOK, s.skipResponse(req.Text, "rescore", settings.Mode, reason, start))
 		return
 	}
-
-	// Check individual word guardrails
 	if skip, reason := s.guardrails.ShouldSkipWord(req.Text, req.Context); skip {
-		response := types.CorrectionResponse{
-			Original:         req.Text,
-			Candidates:       []types.Candidate{},
-			ProcessingTimeMs: time.Since(startTime).Milliseconds(),
-		}
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("X-Skip-Reason", reason)
-		json.NewEncoder(w).Encode(response)
+		writeJSON(w, http.StatusOK, s.skipResponse(req.Text, "rescore", settings.Mode, reason, start))
 		return
 	}
 
-	// Step 1: Get fast suggestions from SymSpell
-	candidates := s.spellChecker.Lookup(req.Text)
+	base := s.lookup(req.Text)
+	withConfusables := s.contextAnalyzer.AddConfusableCandidates(req.Text, base)
+	rescored := s.contextAnalyzer.AnalyzeContext(req.Text, req.Context, withConfusables)
+	rescored = s.applyStoreSignals(req.Text, rescored, settings)
 
-	// Step 1.5: Add confusable words to candidates
-	// This is CRITICAL for catching real-word errors
-	// E.g., "there" might be correct spelling but wrong in "there house"
-	candidatesWithConfusables := s.contextAnalyzer.AddConfusableCandidates(req.Text, candidates)
-
-	// Step 2: Use context analyzer to rescore based on context
-	// This handles real-word errors like their/there/they're
-	rescored := s.contextAnalyzer.AnalyzeContext(req.Text, req.Context, candidatesWithConfusables)
-
-	// Build response
-	response := types.CorrectionResponse{
-		Original:   req.Text,
-		Candidates: rescored,
-	}
-
-	if len(rescored) > 0 {
-		topCandidate := rescored[0]
-
-		// For now, use same logic as fast layer
-		// Later, we'll use LLM confidence scores
-		if topCandidate.Confidence >= s.config.AutoCorrectThreshold &&
-			topCandidate.Word != req.Text {
-			response.BestCandidate = &topCandidate
-			response.ShouldAutoCorrect = true
-		} else if topCandidate.Confidence >= s.config.SuggestionThreshold &&
-			topCandidate.Word != req.Text {
-			response.BestCandidate = &topCandidate
-			response.ShouldAutoCorrect = false
-		}
-	}
-
-	response.ProcessingTimeMs = time.Since(startTime).Milliseconds()
-
-	// Set CORS headers
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-	w.Header().Set("Content-Type", "application/json")
-
-	json.NewEncoder(w).Encode(response)
+	resp := s.decide(req.Text, rescored, settings, "rescore")
+	resp.ProcessingTimeMs = time.Since(start).Milliseconds()
+	writeJSON(w, http.StatusOK, resp)
 }
 
-// HealthHandler checks if the server is running
+// HealthHandler checks backend health.
 func (s *Server) HealthHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
-		"status": "healthy",
-		"version": "0.1.0",
+	settings := s.store.GetSettings()
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":    "healthy",
+		"version":   apiVersion,
+		"mode":      settings.Mode,
+		"enabled":   settings.Enabled,
+		"state_dir": s.config.StateDir,
 	})
 }
 
-// CORSMiddleware handles CORS preflight requests
+func (s *Server) lookup(word string) []types.Candidate {
+	s.spellMu.RLock()
+	defer s.spellMu.RUnlock()
+	return s.spellChecker.Lookup(word)
+}
+
+func (s *Server) applyStoreSignals(original string, candidates []types.Candidate, settings storage.Settings) []types.Candidate {
+	normalizedOriginal := normalizeWord(original)
+	filtered := make([]types.Candidate, 0, len(candidates)+1)
+
+	hasExact := false
+	for _, candidate := range candidates {
+		if candidate.Word == normalizedOriginal {
+			hasExact = true
+		}
+		if s.store.IsPairIgnored(normalizedOriginal, candidate.Word) {
+			continue
+		}
+
+		adjusted := candidate
+		if freq, ok := s.store.GetCustomWordFrequency(candidate.Word); ok {
+			if adjusted.Frequency < freq {
+				adjusted.Frequency = freq
+			}
+			adjusted.Confidence = clampConfidence(adjusted.Confidence + 0.08)
+		}
+
+		if feedbackDelta := s.store.FeedbackAdjustment(normalizedOriginal, candidate.Word); feedbackDelta != 0 {
+			adjusted.Confidence = clampConfidence(adjusted.Confidence + feedbackDelta)
+		}
+
+		filtered = append(filtered, adjusted)
+	}
+
+	if !hasExact {
+		if freq, ok := s.store.GetCustomWordFrequency(normalizedOriginal); ok {
+			filtered = append(filtered, types.Candidate{
+				Word:         normalizedOriginal,
+				Confidence:   1.0,
+				EditDistance: 0,
+				Frequency:    freq,
+			})
+		}
+	}
+
+	sort.Slice(filtered, func(i, j int) bool {
+		if filtered[i].Confidence == filtered[j].Confidence {
+			if filtered[i].Frequency == filtered[j].Frequency {
+				return filtered[i].EditDistance < filtered[j].EditDistance
+			}
+			return filtered[i].Frequency > filtered[j].Frequency
+		}
+		return filtered[i].Confidence > filtered[j].Confidence
+	})
+
+	if settings.MaxSuggestions > 0 && len(filtered) > settings.MaxSuggestions {
+		filtered = filtered[:settings.MaxSuggestions]
+	}
+	return filtered
+}
+
+func (s *Server) skipResponse(original, source, mode, reason string, start time.Time) types.CorrectionResponse {
+	_ = s.store.RecordSkip()
+	return types.CorrectionResponse{
+		Original:         original,
+		Candidates:       []types.Candidate{},
+		ProcessingTimeMs: time.Since(start).Milliseconds(),
+		Source:           source,
+		Reason:           reason,
+		DecisionMode:     mode,
+		Skipped:          true,
+	}
+}
+
+func clampConfidence(value float64) float64 {
+	if value < 0 {
+		return 0
+	}
+	if value > 1 {
+		return 1
+	}
+	return value
+}
+
+func normalizeWord(word string) string {
+	word = strings.TrimSpace(strings.ToLower(word))
+	word = strings.Trim(word, " \t\n\r.,!?;:\"()[]{}")
+	return word
+}
+
+func (s *Server) syncCustomDictionaryFromStore() {
+	words := s.store.ListCustomWords()
+	desired := make(map[string]int64, len(words))
+	for _, entry := range words {
+		desired[entry.Word] = entry.Frequency
+	}
+
+	s.spellMu.Lock()
+	defer s.spellMu.Unlock()
+
+	for word := range s.customWords {
+		if _, ok := desired[word]; !ok {
+			s.spellChecker.RemoveWord(word)
+			delete(s.customWords, word)
+		}
+	}
+	for word, freq := range desired {
+		if existing, ok := s.customWords[word]; ok && existing == freq {
+			continue
+		}
+		s.spellChecker.AddWord(word, freq)
+		s.customWords[word] = freq
+	}
+}
+
+func (s *Server) addCustomWordToSpell(word string, frequency int64) {
+	s.spellMu.Lock()
+	defer s.spellMu.Unlock()
+	s.spellChecker.AddWord(word, frequency)
+	s.customWords[word] = frequency
+}
+
+func (s *Server) removeCustomWordFromSpell(word string) {
+	s.spellMu.Lock()
+	defer s.spellMu.Unlock()
+	s.spellChecker.RemoveWord(word)
+	delete(s.customWords, word)
+}
+
+// CORSMiddleware handles CORS preflight requests.
 func CORSMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Handle preflight requests
 		if r.Method == http.MethodOptions {
-			w.Header().Set("Access-Control-Allow-Origin", "*")
-			w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			setCORSHeaders(w)
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-
+		setCORSHeaders(w)
 		next(w, r)
 	}
+}
+
+func setCORSHeaders(w http.ResponseWriter) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+}
+
+func writeJSON(w http.ResponseWriter, status int, payload interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func writeError(w http.ResponseWriter, status int, message string) {
+	writeJSON(w, status, map[string]string{"error": message})
 }

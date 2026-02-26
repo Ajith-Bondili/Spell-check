@@ -127,6 +127,36 @@ func (s *SymSpell) AddWord(word string, frequency int64) {
 	}
 }
 
+// RemoveWord removes a word from dictionary and delete indices.
+func (s *SymSpell) RemoveWord(word string) {
+	word = strings.ToLower(strings.TrimSpace(word))
+	if word == "" {
+		return
+	}
+
+	if _, exists := s.dictionary[word]; !exists {
+		return
+	}
+
+	delete(s.dictionary, word)
+
+	// Remove this word from every delete bucket to avoid stale suggestions.
+	for key, suggestions := range s.deletes {
+		filtered := suggestions[:0]
+		for _, candidate := range suggestions {
+			if candidate != word {
+				filtered = append(filtered, candidate)
+			}
+		}
+		if len(filtered) == 0 {
+			delete(s.deletes, key)
+			continue
+		}
+		// Re-slice to detach from longer backing arrays.
+		s.deletes[key] = append([]string(nil), filtered...)
+	}
+}
+
 // edits generates all strings within editDistance deletes from word
 // This is RECURSIVE and builds up all possible deletions
 func (s *SymSpell) edits(word string, depth int, result map[string]bool) map[string]bool {
