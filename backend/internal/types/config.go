@@ -25,6 +25,13 @@ func DefaultConfig() *Config {
 		// < 0.50 = too uncertain, ignore
 		AutoCorrectThreshold: 0.75,
 		SuggestionThreshold:  0.50,
+
+		// Persistent runtime state
+		StateDir: "data/state",
+
+		// Decision behavior defaults
+		DefaultMode:    "conservative",
+		MaxSuggestions: 5,
 	}
 }
 

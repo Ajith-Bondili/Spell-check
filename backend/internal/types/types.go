@@ -69,4 +69,11 @@ type Config struct {
 	// Confidence thresholds
 	AutoCorrectThreshold float64 `json:"auto_correct_threshold"`
 	SuggestionThreshold  float64 `json:"suggestion_threshold"`
+
+	// Runtime state storage
+	StateDir string `json:"state_dir"`
+
+	// Decision behavior
+	DefaultMode    string `json:"default_mode"`
+	MaxSuggestions int    `json:"max_suggestions"`
 }
