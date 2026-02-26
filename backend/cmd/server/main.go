@@ -45,7 +45,9 @@ func main() {
 	fmt.Println("   GET  /health  - Health check")
 	fmt.Println("   POST /spell   - Fast spell check (on space)")
 	fmt.Println("   POST /rescore - Context-aware correction (on punctuation)")
-	fmt.Println("\n💡 Press Ctrl+C to stop\n")
+	fmt.Println("")
+	fmt.Println("💡 Press Ctrl+C to stop")
+	fmt.Println("")
 
 	// Listen and serve
 	if err := http.ListenAndServe(addr, nil); err != nil {

@@ -374,16 +374,27 @@ func (ca *ContextAnalyzer) flexiblePatternMatch(targetWord, pattern, context str
 		return false // Pattern was just the target word
 	}
 
-	// Check if ALL significant words appear in context
-	foundAll := true
+	// Match whole words only (not substrings inside other words)
+	contextTokens := tokenizeWords(context)
 	for _, sigWord := range significantWords {
-		if !strings.Contains(context, sigWord) {
-			foundAll = false
-			break
+		if !contextTokens[sigWord] {
+			return false
 		}
 	}
 
-	return foundAll
+	return true
+}
+
+func tokenizeWords(text string) map[string]bool {
+	result := make(map[string]bool)
+	for _, token := range strings.Fields(text) {
+		clean := strings.Trim(token, " \t\n\r.,!?;:\"()[]{}")
+		clean = strings.ToLower(clean)
+		if clean != "" {
+			result[clean] = true
+		}
+	}
+	return result
 }
 
 // ExtractWordContext extracts the context around a word in a sentence
