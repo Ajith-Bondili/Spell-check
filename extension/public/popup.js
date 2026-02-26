@@ -106,6 +106,7 @@ async function loadActiveDomainAndProfile() {
     $('current-domain-label').textContent = currentDomain
         ? `Domain: ${currentDomain}`
         : 'Domain: unavailable on this page';
+    $('domain-profile-source').textContent = 'Profile source: unknown';
 
     if (!currentDomain) {
         toggleDomainProfileControls(false);
@@ -132,6 +133,9 @@ async function loadActiveDomainAndProfile() {
     $('domain-respect-slang').checked = Boolean(profile.respect_slang);
     $('domain-auto-threshold-value').textContent = Number($('domain-auto-threshold').value).toFixed(2);
     $('domain-suggestion-threshold-value').textContent = Number($('domain-suggestion-threshold').value).toFixed(2);
+    $('domain-profile-source').textContent = source === 'domain'
+        ? 'Profile source: domain override'
+        : 'Profile source: default fallback';
 
     if (source === 'default') {
         setMessage('Using default profile for this domain');
