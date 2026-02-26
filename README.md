@@ -1,126 +1,54 @@
-# Local Autocorrect (Offline, Context-Aware)
+# Local Autocorrect (Offline, Private, Fast)
 
-A privacy-first autocorrect system that runs fully on localhost.
+Local Autocorrect is a browser-extension + localhost backend setup that fixes typos in real time without sending your text to the cloud.
 
-No cloud calls. No remote model dependency. Fast typo correction + rule-based context disambiguation.
+## Why this exists
 
-## v0.3 Highlight Features
+Most autocorrect tools either:
+- feel too aggressive and annoying, or
+- require cloud processing for “smart” behavior.
 
-- Time-travel undo chip for auto-corrections (`Undo`, `Always Keep Word`, `Never Replace Pair`)
-- Undo hotkey: `Ctrl/Cmd + Shift + Backspace`
-- Per-domain profiles (different behavior for docs/chat/mail)
-- Correction journal + explicit undo API
-- Pain-point insights API (undone pairs, skip reasons, per-domain volume)
+This project is built to feel safer:
+- local-first by default
+- fast enough to run while typing
+- transparent controls (undo, keep word, block replacement)
 
-## What’s Implemented
+## What you get
 
-### Backend (Go)
-- SymSpell fast correction engine (`/spell`)
-- Context-aware rescoring for confusables (`/rescore`)
-- Guardrails for URLs, code-like text, emails, numbers, hashtags, mentions
-- Runtime settings API (`/settings`)
-- Profile APIs (`/profiles`, `/profiles/default`, `/profiles/domain/{domain}`)
-- User dictionary + ignore rules API (`/dictionary`, `/dictionary/words`, `/dictionary/ignore`)
-- Stats + feedback APIs (`/stats`, `/stats/reset`, `/feedback`)
-- Applied-correction + undo APIs (`/corrections/applied`, `/undo`)
-- Insight API (`/insights/pain-points`)
-- Persistent JSON state store (`backend/data/state`)
+- Fast typo correction while typing
+- Context-aware suggestions for common confusables
+- Per-domain behavior (docs vs chat can act differently)
+- Time-travel undo chip for auto-corrections
+- Friendly popup controls for tuning, custom words, and insights
 
-### Extension (Manifest V3)
-- Real-time correction on text fields + contenteditable elements
-- Background service worker as API control plane
-- Live settings sync from popup
-- Domain profile editor in popup
-- Custom-word management from popup
-- Ignore rules from popup
-- Live stats + reset + backend reload controls from popup
-- Undo chip and trust controls in-page (keep word / block pair)
+## 3-minute start
 
-## Quick Start
-
+1. Start backend:
 ```bash
-# 1) Start backend
 cd backend
 go run ./cmd/server/main.go
-
-# 2) Load extension
-# chrome://extensions -> Developer mode -> Load unpacked -> extension/
-
-# 3) Test
-# Open extension/test.html and type typos like "teh "
 ```
 
-## API Overview
+2. Load extension:
+- Open `chrome://extensions`
+- Enable Developer mode
+- Click **Load unpacked**
+- Select `extension/`
 
-Core:
-- `GET /health`
-- `POST /spell`
-- `POST /rescore`
+3. Test:
+- Open `extension/test.html`
+- Type `teh ` and similar typos
 
-Runtime control:
-- `GET /settings`
-- `PUT /settings`
-- `GET /dictionary`
-- `POST /dictionary/words`
-- `DELETE /dictionary/words/{word}`
-- `POST /dictionary/ignore`
-- `GET /stats`
-- `POST /stats/reset`
-- `POST /feedback`
-- `GET /profiles`
-- `GET /profiles/default`
-- `PUT /profiles/default`
-- `GET /profiles/domain/{domain}`
-- `PUT /profiles/domain/{domain}`
-- `DELETE /profiles/domain/{domain}`
-- `POST /corrections/applied`
-- `POST /undo`
-- `GET /insights/pain-points`
-- `POST /reload`
+## Where to go next
 
-See full examples in [docs/API.md](docs/API.md).
+- Quick setup help: [docs/INSTALLATION.md](docs/INSTALLATION.md)
+- API details: [docs/API.md](docs/API.md)
+- Architecture notes: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- What changed recently: [docs/CHANGELOG.md](docs/CHANGELOG.md)
 
-## Current Decision Modes
+## Tech note
 
-- `conservative` (default): safer auto-correct behavior
-- `aggressive`: lower auto-correct threshold for speed
-- `suggestions_only`: never auto-apply replacements
-
-## Project Structure
-
-```text
-Spell-check/
-├── backend/
-│   ├── cmd/server/
-│   ├── internal/
-│   │   ├── api/
-│   │   ├── guardrails/
-│   │   ├── llm/          # rule-based context logic (no external LLM dependency)
-│   │   ├── spellcheck/
-│   │   ├── storage/      # JSON-backed runtime state
-│   │   └── types/
-│   └── data/
-├── extension/
-│   ├── src/
-│   ├── public/
-│   └── test.html
-└── docs/
-```
-
-## Testing
-
-```bash
-cd backend
-go test ./...
-```
-
-## Docs
-
-- [Installation](docs/INSTALLATION.md)
-- [Architecture](docs/ARCHITECTURE.md)
-- [API Reference](docs/API.md)
-- [Roadmap](docs/ROADMAP.md)
-- [Changelog](docs/CHANGELOG.md)
+Current implementation is algorithm-first (no external LLM runtime required).
 
 ## License
 
