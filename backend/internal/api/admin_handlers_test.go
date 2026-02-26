@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/Ajith-Bondili/spell-check/internal/spellcheck"
@@ -157,5 +158,20 @@ func TestCorrectionAppliedUndoAndInsightsHandlers(t *testing.T) {
 	server.PainPointsHandler(insightsRec, insightsReq)
 	if insightsRec.Code != http.StatusOK {
 		t.Fatalf("expected 200 on insights, got %d: %s", insightsRec.Code, insightsRec.Body.String())
+	}
+}
+
+func TestPainPointsHandlerLimitQuery(t *testing.T) {
+	server := newAPITestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/insights/pain-points?limit=3", nil)
+	rec := httptest.NewRecorder()
+	server.PainPointsHandler(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"limit":3`) {
+		t.Fatalf("expected response to include limit=3, got: %s", rec.Body.String())
 	}
 }
