@@ -5,167 +5,285 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Local Autocorrect</title>
     <style>
+        :root {
+            --bg: #0f172a;
+            --surface: #1e293b;
+            --surface-soft: #334155;
+            --text: #e2e8f0;
+            --muted: #94a3b8;
+            --ok: #22c55e;
+            --warn: #f59e0b;
+            --danger: #ef4444;
+            --accent: #38bdf8;
+            --border: #475569;
+        }
+
         * {
+            box-sizing: border-box;
             margin: 0;
             padding: 0;
-            box-sizing: border-box;
         }
 
         body {
-            width: 320px;
-            padding: 16px;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: #1a202c;
-            color: #e2e8f0;
+            width: 380px;
+            padding: 14px;
+            background: radial-gradient(circle at 12% 12%, #1d4ed8 0%, #0f172a 45%);
+            color: var(--text);
+            font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+        }
+
+        .card {
+            background: linear-gradient(180deg, rgba(30, 41, 59, 0.95), rgba(15, 23, 42, 0.95));
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 12px;
+            margin-bottom: 10px;
         }
 
         .header {
             display: flex;
+            justify-content: space-between;
             align-items: center;
-            gap: 12px;
-            margin-bottom: 20px;
+            margin-bottom: 10px;
         }
 
-        .header h1 {
-            font-size: 18px;
-            font-weight: 600;
+        .title {
+            font-size: 16px;
+            font-weight: 700;
+            letter-spacing: 0.2px;
         }
 
         .status {
             display: flex;
             align-items: center;
             gap: 8px;
-            padding: 12px;
-            background: #2d3748;
-            border-radius: 8px;
-            margin-bottom: 16px;
-        }
-
-        .status-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: #48bb78;
-        }
-
-        .status-dot.offline {
-            background: #f56565;
-        }
-
-        .status-text {
-            font-size: 14px;
-        }
-
-        .section {
-            margin-bottom: 16px;
-        }
-
-        .section-title {
             font-size: 12px;
-            font-weight: 600;
-            text-transform: uppercase;
-            color: #a0aec0;
-            margin-bottom: 8px;
+            color: var(--muted);
         }
 
-        .toggle {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 12px;
-            background: #2d3748;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: background 0.2s;
+        .dot {
+            width: 9px;
+            height: 9px;
+            border-radius: 99px;
+            background: var(--danger);
         }
 
-        .toggle:hover {
-            background: #374151;
+        .dot.ok {
+            background: var(--ok);
         }
 
-        .toggle input {
-            cursor: pointer;
-        }
-
-        .stats {
+        .grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 8px;
         }
 
-        .stat {
-            padding: 12px;
-            background: #2d3748;
+        .row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        label {
+            font-size: 12px;
+            color: var(--muted);
+            display: block;
+            margin-bottom: 6px;
+        }
+
+        input[type='text'],
+        input[type='number'],
+        select {
+            width: 100%;
+            background: rgba(15, 23, 42, 0.85);
+            border: 1px solid var(--border);
             border-radius: 8px;
-            text-align: center;
+            color: var(--text);
+            padding: 7px 8px;
+            font-size: 12px;
         }
 
-        .stat-value {
-            font-size: 24px;
+        input[type='range'] {
+            width: 100%;
+        }
+
+        .toggle {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 10px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: rgba(15, 23, 42, 0.85);
+            margin-bottom: 10px;
+        }
+
+        .btn {
+            background: var(--accent);
+            color: #0f172a;
+            border: none;
+            border-radius: 8px;
+            padding: 7px 10px;
+            font-size: 12px;
             font-weight: 700;
-            color: #48bb78;
+            cursor: pointer;
         }
 
-        .stat-label {
-            font-size: 11px;
-            color: #a0aec0;
-            margin-top: 4px;
+        .btn.secondary {
+            background: var(--surface-soft);
+            color: var(--text);
         }
 
-        .footer {
-            margin-top: 16px;
-            padding-top: 16px;
-            border-top: 1px solid #2d3748;
+        .btn.warn {
+            background: var(--warn);
+            color: #1f2937;
+        }
+
+        .btn.danger {
+            background: var(--danger);
+            color: white;
+        }
+
+        .btn.block {
+            width: 100%;
+        }
+
+        .section-title {
             font-size: 11px;
-            color: #718096;
+            color: var(--muted);
+            text-transform: uppercase;
+            margin-bottom: 8px;
+            letter-spacing: 0.06em;
+        }
+
+        .metric {
             text-align: center;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 8px;
+            background: rgba(15, 23, 42, 0.8);
         }
 
-        .link {
-            color: #4299e1;
-            text-decoration: none;
+        .metric .value {
+            font-size: 18px;
+            font-weight: 700;
+            color: #7dd3fc;
         }
 
-        .link:hover {
-            text-decoration: underline;
+        .metric .label {
+            font-size: 11px;
+            color: var(--muted);
+        }
+
+        .list {
+            max-height: 120px;
+            overflow: auto;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 6px;
+            background: rgba(15, 23, 42, 0.8);
+        }
+
+        .list-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 12px;
+            padding: 4px 3px;
+            border-bottom: 1px dashed rgba(71, 85, 105, 0.5);
+        }
+
+        .list-item:last-child {
+            border-bottom: none;
+        }
+
+        .message {
+            min-height: 18px;
+            font-size: 12px;
+            color: #bfdbfe;
+            margin-top: 6px;
         }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>✨ Local Autocorrect</h1>
-    </div>
-
-    <div class="status" id="status">
-        <div class="status-dot" id="status-dot"></div>
-        <div class="status-text" id="status-text">Checking backend...</div>
-    </div>
-
-    <div class="section">
-        <div class="section-title">Settings</div>
-        <label class="toggle">
-            <span>Enable Autocorrect</span>
-            <input type="checkbox" id="enable-toggle" checked>
-        </label>
-    </div>
-
-    <div class="section">
-        <div class="section-title">Statistics (Coming Soon)</div>
-        <div class="stats">
-            <div class="stat">
-                <div class="stat-value">127</div>
-                <div class="stat-label">Corrections Today</div>
-            </div>
-            <div class="stat">
-                <div class="stat-value">98%</div>
-                <div class="stat-label">Accuracy</div>
-            </div>
+    <div class="card">
+        <div class="header">
+            <div class="title">Local Autocorrect</div>
+            <button class="btn secondary" id="refresh-health">Refresh</button>
+        </div>
+        <div class="status">
+            <span class="dot" id="status-dot"></span>
+            <span id="status-text">Checking backend...</span>
         </div>
     </div>
 
-    <div class="footer">
-        100% Offline • Privacy First<br>
-        <a href="#" class="link" id="open-settings">Settings</a>
+    <div class="card">
+        <div class="section-title">Runtime Settings</div>
+        <div class="toggle">
+            <span>Enable Autocorrect</span>
+            <input type="checkbox" id="enable-toggle">
+        </div>
+        <label for="mode-select">Mode</label>
+        <select id="mode-select">
+            <option value="conservative">Conservative</option>
+            <option value="aggressive">Aggressive</option>
+            <option value="suggestions_only">Suggestions only</option>
+        </select>
+        <div class="grid" style="margin-top: 8px;">
+            <div>
+                <label for="auto-threshold">Auto threshold <span id="auto-threshold-value">0.75</span></label>
+                <input id="auto-threshold" type="range" min="0.50" max="0.99" step="0.01">
+            </div>
+            <div>
+                <label for="suggestion-threshold">Suggest threshold <span id="suggestion-threshold-value">0.50</span></label>
+                <input id="suggestion-threshold" type="range" min="0.20" max="0.90" step="0.01">
+            </div>
+        </div>
+        <div style="margin-top: 8px;">
+            <label for="max-suggestions">Max suggestions</label>
+            <input id="max-suggestions" type="number" min="1" max="20">
+        </div>
+        <div class="row" style="margin-top: 10px;">
+            <button class="btn block" id="save-settings">Save settings</button>
+            <button class="btn secondary block" id="sync-settings">Sync</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="section-title">Custom Dictionary</div>
+        <div class="row">
+            <input id="add-word-input" type="text" placeholder="Add custom word">
+            <button class="btn" id="add-word-btn">Add</button>
+        </div>
+        <div class="list" id="dictionary-list" style="margin-top: 8px;"></div>
+    </div>
+
+    <div class="card">
+        <div class="section-title">Ignore Rules</div>
+        <div class="row">
+            <input id="ignore-word-input" type="text" placeholder="Ignore exact word">
+            <button class="btn secondary" id="ignore-word-btn">Ignore</button>
+        </div>
+        <div class="row" style="margin-top: 6px;">
+            <input id="ignore-original-input" type="text" placeholder="Original">
+            <input id="ignore-suggestion-input" type="text" placeholder="Suggestion">
+            <button class="btn secondary" id="ignore-pair-btn">Block</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="section-title">Stats</div>
+        <div class="grid">
+            <div class="metric"><div class="value" id="stat-total">0</div><div class="label">Requests</div></div>
+            <div class="metric"><div class="value" id="stat-auto">0</div><div class="label">Auto</div></div>
+            <div class="metric"><div class="value" id="stat-suggest">0</div><div class="label">Suggest</div></div>
+            <div class="metric"><div class="value" id="stat-skip">0</div><div class="label">Skipped</div></div>
+        </div>
+        <div class="row" style="margin-top: 10px;">
+            <button class="btn warn block" id="reload-state">Reload state</button>
+            <button class="btn danger block" id="reset-stats">Reset stats</button>
+        </div>
+        <div class="message" id="popup-message"></div>
     </div>
 
     <script src="popup.js"></script>

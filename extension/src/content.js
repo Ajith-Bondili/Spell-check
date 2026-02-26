@@ -1,117 +1,124 @@
 /**
- * Content Script - Monitors typing on all web pages
- *
- * This script runs on EVERY webpage and monitors:
- * - <input type="text">
- * - <textarea>
- * - <div contenteditable>
- *
- * On SPACE: Calls /spell for fast correction
- * On PUNCTUATION: Calls /rescore for context-aware correction
+ * Content Script - monitors typing and requests corrections from background.
  */
 
 console.log('🎯 Local Autocorrect: Content script loaded');
 
-// Configuration
-const CONFIG = {
-    backendUrl: 'http://127.0.0.1:8080',
-    autoCorrectThreshold: 0.9,
+let runtimeState = {
+    enabled: true,
     suggestionThreshold: 0.5,
-    debounceMs: 150, // Wait before calling /rescore
 };
 
-// Track current suggestion
 let currentSuggestion = null;
 let suggestionElement = null;
 
-/**
- * Initialize autocorrect on page load
- */
 function init() {
-    console.log('🚀 Initializing Local Autocorrect');
-
-    // Listen for input events on all text fields
     document.addEventListener('input', handleInput, true);
     document.addEventListener('keydown', handleKeyDown, true);
-
-    // Create suggestion UI element
+    chrome.storage.onChanged.addListener(handleStorageChange);
     createSuggestionElement();
+    loadRuntimeState();
 }
 
-/**
- * Handle input events (typing)
- */
-function handleInput(event) {
-    const target = event.target;
+async function loadRuntimeState() {
+    const response = await sendMessage({ type: 'GET_STATE' });
+    if (!response?.error && response) {
+        runtimeState = { ...runtimeState, ...response };
+    }
+}
 
-    // Only process text inputs
-    if (!isTextInput(target)) {
+function handleStorageChange(changes, areaName) {
+    if (areaName !== 'local') {
+        return;
+    }
+    if (changes.enabled) {
+        runtimeState.enabled = changes.enabled.newValue;
+    }
+    if (changes.suggestionThreshold) {
+        runtimeState.suggestionThreshold = changes.suggestionThreshold.newValue;
+    }
+}
+
+async function handleInput(event) {
+    const target = event.target;
+    if (!runtimeState.enabled || !isTextInput(target)) {
         return;
     }
 
-    // Get the last character typed
     const value = getInputValue(target);
-    const lastChar = value.slice(-1);
+    if (!value) {
+        return;
+    }
 
-    // On space: fast spell check
+    const lastChar = value.slice(-1);
     if (lastChar === ' ') {
         const word = getLastWord(value);
         if (word && word.length > 1) {
-            checkSpelling(word, target);
+            await requestCorrection({ target, word, context: value, useContext: false });
         }
     }
 
-    // On punctuation: context-aware check
     if (isPunctuation(lastChar)) {
         const context = value;
-        const word = getLastWord(value.slice(0, -1)); // Exclude punctuation
+        const word = getLastWord(value.slice(0, -1));
         if (word && word.length > 1) {
-            checkSpellingWithContext(word, context, target);
+            await requestCorrection({ target, word, context, useContext: true });
         }
     }
 }
 
-/**
- * Handle keyboard shortcuts
- */
 function handleKeyDown(event) {
-    // Tab: Accept suggestion
     if (event.key === 'Tab' && currentSuggestion) {
         event.preventDefault();
-        applySuggestion(event.target, currentSuggestion);
+        applySuggestion(currentSuggestion.target, currentSuggestion);
+        return;
     }
 
-    // Escape: Dismiss suggestion
     if (event.key === 'Escape' && currentSuggestion) {
         event.preventDefault();
+        sendFeedback(currentSuggestion.originalWord, currentSuggestion.suggestionWord, false);
         dismissSuggestion();
     }
 }
 
-/**
- * Check if element is a text input
- */
+async function requestCorrection({ target, word, context, useContext }) {
+    const response = await sendMessage({
+        type: 'CHECK_TEXT',
+        payload: { word, context, useContext },
+    });
+
+    if (!response || response.error || !response.result) {
+        return;
+    }
+
+    const result = response.result;
+    if (result.should_auto_correct && result.best_candidate) {
+        autoCorrect(target, word, result.best_candidate.word);
+    } else if (
+        result.best_candidate &&
+        result.best_candidate.confidence >= runtimeState.suggestionThreshold
+    ) {
+        showSuggestion(target, word, result.best_candidate.word);
+    } else {
+        dismissSuggestion();
+    }
+}
+
 function isTextInput(element) {
     if (!element) return false;
 
-    // Regular inputs
     if (element.tagName === 'INPUT') {
-        const type = element.type.toLowerCase();
-
-        // SECURITY: Never autocorrect password fields!
+        const type = (element.type || '').toLowerCase();
         if (type === 'password') {
             return false;
         }
-
-        return type === 'text' || type === 'search' || type === 'email' || type === '';
+        return ['text', 'search', 'email', ''].includes(type);
     }
 
-    // Textareas
     if (element.tagName === 'TEXTAREA') {
         return true;
     }
 
-    // Contenteditable divs (Gmail, Notion, etc.)
     if (element.isContentEditable) {
         return true;
     }
@@ -119,9 +126,6 @@ function isTextInput(element) {
     return false;
 }
 
-/**
- * Get input value (works for regular inputs and contenteditable)
- */
 function getInputValue(element) {
     if (element.isContentEditable) {
         return element.innerText || element.textContent || '';
@@ -129,9 +133,6 @@ function getInputValue(element) {
     return element.value || '';
 }
 
-/**
- * Set input value
- */
 function setInputValue(element, value) {
     if (element.isContentEditable) {
         element.innerText = value;
@@ -140,169 +141,106 @@ function setInputValue(element, value) {
     }
 }
 
-/**
- * Get the last word from text
- */
 function getLastWord(text) {
-    // Remove trailing spaces/punctuation
     text = text.trim();
-
-    // Split by whitespace and get last word
+    if (!text) {
+        return '';
+    }
     const words = text.split(/\s+/);
-    const lastWord = words[words.length - 1];
-
-    // Remove punctuation from end
-    return lastWord.replace(/[.,!?;:]$/, '');
+    return words[words.length - 1].replace(/[.,!?;:]$/, '');
 }
 
-/**
- * Check if character is punctuation
- */
 function isPunctuation(char) {
     return /[.,!?;:]/.test(char);
 }
 
-/**
- * Call /spell endpoint for fast spelling check
- */
-async function checkSpelling(word, target) {
-    try {
-        const response = await fetch(`${CONFIG.backendUrl}/spell`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: word }),
-        });
-
-        if (!response.ok) {
-            console.error('❌ Spell check failed:', response.statusText);
-            return;
-        }
-
-        const data = await response.json();
-        console.log('📝 Spell check result:', data);
-
-        // Handle correction
-        if (data.should_auto_correct && data.best_candidate) {
-            // Auto-correct high confidence
-            autoCorrect(target, word, data.best_candidate.word);
-        } else if (data.best_candidate && data.best_candidate.confidence >= CONFIG.suggestionThreshold) {
-            // Show suggestion for medium confidence
-            showSuggestion(target, data.best_candidate.word);
-        }
-    } catch (error) {
-        console.error('❌ Error checking spelling:', error);
-    }
-}
-
-/**
- * Call /rescore endpoint for context-aware correction
- */
-async function checkSpellingWithContext(word, context, target) {
-    try {
-        const response = await fetch(`${CONFIG.backendUrl}/rescore`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: word, context: context }),
-        });
-
-        if (!response.ok) {
-            console.error('❌ Rescore failed:', response.statusText);
-            return;
-        }
-
-        const data = await response.json();
-        console.log('🧠 Context-aware result:', data);
-
-        // Handle correction (same logic as fast check for now)
-        if (data.should_auto_correct && data.best_candidate) {
-            autoCorrect(target, word, data.best_candidate.word);
-        } else if (data.best_candidate && data.best_candidate.confidence >= CONFIG.suggestionThreshold) {
-            showSuggestion(target, data.best_candidate.word);
-        }
-    } catch (error) {
-        console.error('❌ Error checking with context:', error);
-    }
-}
-
-/**
- * Auto-correct: Replace word immediately
- */
 function autoCorrect(target, oldWord, newWord) {
-    console.log(`✅ Auto-correcting: ${oldWord} → ${newWord}`);
-
     const currentValue = getInputValue(target);
-    const newValue = currentValue.replace(new RegExp(oldWord + '(?!\\w)', 'g'), newWord);
-
-    setInputValue(target, newValue);
-
-    // Dispatch input event so other scripts know the value changed
+    const updated = replaceLastWholeWord(currentValue, oldWord, newWord);
+    setInputValue(target, updated);
     target.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
-/**
- * Show suggestion bubble
- */
-function showSuggestion(target, suggestion) {
-    console.log(`💡 Showing suggestion: ${suggestion}`);
+function showSuggestion(target, originalWord, suggestionWord) {
+    currentSuggestion = {
+        target,
+        originalWord,
+        suggestionWord,
+    };
 
-    currentSuggestion = suggestion;
-
-    // Position suggestion near cursor
     const rect = target.getBoundingClientRect();
-    suggestionElement.textContent = `Did you mean: ${suggestion}? (Tab to accept, Esc to dismiss)`;
+    suggestionElement.textContent = `Did you mean "${suggestionWord}"? (Tab accept / Esc dismiss)`;
     suggestionElement.style.display = 'block';
     suggestionElement.style.top = `${rect.bottom + window.scrollY + 5}px`;
     suggestionElement.style.left = `${rect.left + window.scrollX}px`;
 }
 
-/**
- * Dismiss suggestion
- */
 function dismissSuggestion() {
     currentSuggestion = null;
     suggestionElement.style.display = 'none';
 }
 
-/**
- * Apply suggestion when user presses Tab
- */
 function applySuggestion(target, suggestion) {
     const currentValue = getInputValue(target);
-    const lastWord = getLastWord(currentValue);
-
-    const newValue = currentValue.replace(new RegExp(lastWord + '(?!\\w)', 'g'), suggestion);
-    setInputValue(target, newValue);
-
-    dismissSuggestion();
-
-    // Dispatch input event
+    const updated = replaceLastWholeWord(currentValue, suggestion.originalWord, suggestion.suggestionWord);
+    setInputValue(target, updated);
     target.dispatchEvent(new Event('input', { bubbles: true }));
+    sendFeedback(suggestion.originalWord, suggestion.suggestionWord, true);
+    dismissSuggestion();
 }
 
-/**
- * Create suggestion UI element
- */
+function replaceLastWholeWord(text, fromWord, toWord) {
+    const escaped = escapeRegex(fromWord);
+    const pattern = new RegExp(`\\b${escaped}\\b(?![\\s\\S]*\\b${escaped}\\b)`, 'i');
+    return text.replace(pattern, toWord);
+}
+
+function escapeRegex(value) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function createSuggestionElement() {
     suggestionElement = document.createElement('div');
     suggestionElement.id = 'local-autocorrect-suggestion';
     suggestionElement.style.cssText = `
         position: absolute;
         z-index: 999999;
-        background: #2d3748;
-        color: white;
+        background: #1f2937;
+        color: #f8fafc;
         padding: 8px 12px;
         border-radius: 6px;
-        font-size: 14px;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        font-size: 13px;
+        font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18);
+        border: 1px solid #334155;
         display: none;
-        max-width: 300px;
+        max-width: 320px;
         pointer-events: none;
     `;
     document.body.appendChild(suggestionElement);
 }
 
-// Initialize when DOM is ready
+function sendMessage(message) {
+    return new Promise((resolve) => {
+        chrome.runtime.sendMessage(message, (response) => {
+            resolve(response);
+        });
+    });
+}
+
+function sendFeedback(original, suggestion, accepted) {
+    sendMessage({
+        type: 'SEND_FEEDBACK',
+        payload: {
+            original,
+            suggestion,
+            accepted,
+        },
+    }).catch(() => {
+        // ignore feedback failures in content script
+    });
+}
+
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
 } else {
