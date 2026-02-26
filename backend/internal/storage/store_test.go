@@ -33,15 +33,90 @@ func TestNewStoreInitializesFilesAndDefaults(t *testing.T) {
 
 	files := []string{
 		"settings.json",
+		"profiles.json",
 		"user_dictionary.json",
 		"ignored.json",
 		"stats.json",
 		"feedback.json",
+		"correction_journal.json",
 	}
 	for _, filename := range files {
 		if _, err := os.Stat(filepath.Join(dir, filename)); err != nil {
 			t.Fatalf("expected %s to exist: %v", filename, err)
 		}
+	}
+}
+
+func TestDomainProfilesResolve(t *testing.T) {
+	store, err := NewStore(t.TempDir(), defaultTestSettings())
+	if err != nil {
+		t.Fatalf("NewStore failed: %v", err)
+	}
+
+	profile, err := store.SetDomainProfile("my.chat.app", Settings{
+		Enabled:              true,
+		Mode:                 ModeSuggestions,
+		AutoCorrectThreshold: 0.8,
+		SuggestionThreshold:  0.35,
+		MaxSuggestions:       6,
+		RespectSlang:         true,
+	})
+	if err != nil {
+		t.Fatalf("SetDomainProfile failed: %v", err)
+	}
+	if !profile.RespectSlang {
+		t.Fatal("expected respect_slang=true")
+	}
+
+	effective, matched := store.ResolveSettings("room.my.chat.app")
+	if matched != "my.chat.app" {
+		t.Fatalf("expected matched domain my.chat.app, got %s", matched)
+	}
+	if effective.Mode != ModeSuggestions {
+		t.Fatalf("expected suggestions mode, got %s", effective.Mode)
+	}
+}
+
+func TestCorrectionJournalUndoAndInsights(t *testing.T) {
+	store, err := NewStore(t.TempDir(), defaultTestSettings())
+	if err != nil {
+		t.Fatalf("NewStore failed: %v", err)
+	}
+
+	record, err := store.RecordAppliedCorrection(CorrectionRecord{
+		Original:    "teh",
+		Suggestion:  "the",
+		Domain:      "docs.google.com",
+		Source:      "spell",
+		Mode:        ModeConservative,
+		Reason:      "auto_correct",
+		Explanation: "Fixed likely typo with high confidence.",
+		Confidence:  0.88,
+	})
+	if err != nil {
+		t.Fatalf("RecordAppliedCorrection failed: %v", err)
+	}
+	if record.CorrectionID == "" {
+		t.Fatal("expected correction_id to be set")
+	}
+
+	undone, found, err := store.UndoCorrection(record.CorrectionID)
+	if err != nil {
+		t.Fatalf("UndoCorrection failed: %v", err)
+	}
+	if !found || !undone.Undone {
+		t.Fatalf("expected correction to be marked undone, got %+v", undone)
+	}
+
+	insights := store.GetPainPointInsights(5)
+	if len(insights.TopUndonePairs) == 0 {
+		t.Fatal("expected undone pair insight")
+	}
+	if insights.TopUndonePairs[0].Key != "teh|the" {
+		t.Fatalf("expected top undone pair teh|the, got %s", insights.TopUndonePairs[0].Key)
+	}
+	if len(insights.DomainCorrectionVolume) == 0 {
+		t.Fatal("expected domain correction volume insight")
 	}
 }
 

@@ -12,6 +12,15 @@ type CorrectionRequest struct {
 
 	// Position of the word in the context (for future use)
 	Position int `json:"position,omitempty"`
+
+	// Current website domain (used for per-domain profiles)
+	Domain string `json:"domain,omitempty"`
+
+	// Session identifier from extension
+	SessionID string `json:"session_id,omitempty"`
+
+	// Optional cursor token for future reconciliation
+	CursorToken string `json:"cursor_token,omitempty"`
 }
 
 // Candidate represents a potential correction for a word
@@ -61,22 +70,31 @@ type CorrectionResponse struct {
 
 	// True if the request was intentionally skipped
 	Skipped bool `json:"skipped"`
+
+	// Unique correction identifier (set when we provide a best candidate)
+	CorrectionID string `json:"correction_id,omitempty"`
+
+	// User-facing explanation for why this decision happened
+	Explanation string `json:"explanation,omitempty"`
+
+	// Time window where undo is shown for auto-corrections
+	UndoTTLms int `json:"undo_ttl_ms,omitempty"`
 }
 
 // Config holds application configuration
 type Config struct {
 	// Server settings
-	Port              int    `json:"port"`
-	Host              string `json:"host"`
+	Port int    `json:"port"`
+	Host string `json:"host"`
 
 	// Spell checker settings
-	MaxEditDistance   int    `json:"max_edit_distance"`
-	DictionaryPath    string `json:"dictionary_path"`
+	MaxEditDistance int    `json:"max_edit_distance"`
+	DictionaryPath  string `json:"dictionary_path"`
 
 	// LLM settings
-	ModelPath         string `json:"model_path"`
-	ContextLength     int    `json:"context_length"`
-	UseGPU            bool   `json:"use_gpu"`
+	ModelPath     string `json:"model_path"`
+	ContextLength int    `json:"context_length"`
+	UseGPU        bool   `json:"use_gpu"`
 
 	// Confidence thresholds
 	AutoCorrectThreshold float64 `json:"auto_correct_threshold"`

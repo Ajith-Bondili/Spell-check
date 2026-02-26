@@ -60,6 +60,12 @@ func main() {
 	http.HandleFunc("/stats", api.CORSMiddleware(server.StatsHandler))
 	http.HandleFunc("/stats/reset", api.CORSMiddleware(server.StatsResetHandler))
 	http.HandleFunc("/feedback", api.CORSMiddleware(server.FeedbackHandler))
+	http.HandleFunc("/profiles", api.CORSMiddleware(server.ProfilesHandler))
+	http.HandleFunc("/profiles/default", api.CORSMiddleware(server.ProfilesDefaultHandler))
+	http.HandleFunc("/profiles/domain/", api.CORSMiddleware(server.ProfilesDomainHandler))
+	http.HandleFunc("/corrections/applied", api.CORSMiddleware(server.CorrectionAppliedHandler))
+	http.HandleFunc("/undo", api.CORSMiddleware(server.UndoHandler))
+	http.HandleFunc("/insights/pain-points", api.CORSMiddleware(server.PainPointsHandler))
 	http.HandleFunc("/reload", api.CORSMiddleware(server.ReloadHandler))
 
 	// Start server
@@ -73,6 +79,8 @@ func main() {
 	fmt.Println("   GET  /dictionary / POST /dictionary/words / DELETE /dictionary/words/{word}")
 	fmt.Println("   POST /dictionary/ignore / GET /stats / POST /stats/reset")
 	fmt.Println("   POST /feedback / POST /reload")
+	fmt.Println("   GET /profiles / GET+PUT /profiles/default / GET+PUT+DELETE /profiles/domain/{domain}")
+	fmt.Println("   POST /corrections/applied / POST /undo / GET /insights/pain-points")
 	fmt.Println("")
 	fmt.Println("💡 Press Ctrl+C to stop")
 	fmt.Println("")

@@ -90,3 +90,72 @@ func TestDictionaryWordLifecycle(t *testing.T) {
 		t.Fatal("word should be removed from store")
 	}
 }
+
+func TestProfilesDomainLifecycle(t *testing.T) {
+	server := newAPITestServer(t)
+
+	payload := []byte(`{
+		"mode": "suggestions_only",
+		"auto_correct_threshold": 0.9,
+		"suggestion_threshold": 0.4,
+		"max_suggestions": 6,
+		"respect_slang": true
+	}`)
+	putReq := httptest.NewRequest(http.MethodPut, "/profiles/domain/chat.openai.com", bytes.NewReader(payload))
+	putRec := httptest.NewRecorder()
+	server.ProfilesDomainHandler(putRec, putReq)
+	if putRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on put profile, got %d: %s", putRec.Code, putRec.Body.String())
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/profiles/domain/chat.openai.com", nil)
+	getRec := httptest.NewRecorder()
+	server.ProfilesDomainHandler(getRec, getReq)
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on get profile, got %d: %s", getRec.Code, getRec.Body.String())
+	}
+
+	delReq := httptest.NewRequest(http.MethodDelete, "/profiles/domain/chat.openai.com", nil)
+	delRec := httptest.NewRecorder()
+	server.ProfilesDomainHandler(delRec, delReq)
+	if delRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on delete profile, got %d: %s", delRec.Code, delRec.Body.String())
+	}
+}
+
+func TestCorrectionAppliedUndoAndInsightsHandlers(t *testing.T) {
+	server := newAPITestServer(t)
+
+	applyPayload := []byte(`{
+		"correction_id":"corr_test_1",
+		"original":"teh",
+		"suggestion":"the",
+		"domain":"docs.google.com",
+		"source":"spell",
+		"mode":"conservative",
+		"reason":"auto_correct",
+		"explanation":"Fixed likely typo with high confidence.",
+		"confidence":0.88,
+		"session_id":"sess_test"
+	}`)
+	applyReq := httptest.NewRequest(http.MethodPost, "/corrections/applied", bytes.NewReader(applyPayload))
+	applyRec := httptest.NewRecorder()
+	server.CorrectionAppliedHandler(applyRec, applyReq)
+	if applyRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on applied correction, got %d: %s", applyRec.Code, applyRec.Body.String())
+	}
+
+	undoReq := httptest.NewRequest(http.MethodPost, "/undo", bytes.NewReader([]byte(`{"correction_id":"corr_test_1"}`)))
+	undoRec := httptest.NewRecorder()
+	server.UndoHandler(undoRec, undoReq)
+	if undoRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on undo, got %d: %s", undoRec.Code, undoRec.Body.String())
+	}
+
+	insightsReq := httptest.NewRequest(http.MethodGet, "/insights/pain-points", nil)
+	insightsRec := httptest.NewRecorder()
+	server.PainPointsHandler(insightsRec, insightsReq)
+	if insightsRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on insights, got %d: %s", insightsRec.Code, insightsRec.Body.String())
+	}
+}

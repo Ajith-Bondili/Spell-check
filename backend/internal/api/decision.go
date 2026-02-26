@@ -17,12 +17,14 @@ func (s *Server) decide(original string, candidates []types.Candidate, settings 
 
 	if len(candidates) == 0 {
 		resp.Reason = "no_candidates"
+		resp.Explanation = "No viable correction candidates."
 		return resp
 	}
 
 	top := candidates[0]
 	if strings.EqualFold(top.Word, normalizeWord(original)) {
 		resp.Reason = "already_correct"
+		resp.Explanation = "Word already looks correct."
 		return resp
 	}
 
@@ -42,15 +44,30 @@ func (s *Server) decide(original string, candidates []types.Candidate, settings 
 			resp.BestCandidate = &top
 			resp.ShouldAutoCorrect = false
 			resp.Reason = "conservative_distance_gate"
+			resp.Explanation = "Conservative mode avoids force-fixing distant edits."
 			_ = s.store.RecordSuggestion()
 			return resp
 		}
+	}
+
+	if settings.RespectSlang && top.EditDistance > 1 {
+		resp.BestCandidate = &top
+		resp.ShouldAutoCorrect = false
+		resp.Reason = "slang_guard"
+		resp.Explanation = "Slang-safe profile prefers suggestion over auto-correct."
+		_ = s.store.RecordSuggestion()
+		return resp
 	}
 
 	if settings.Mode != storage.ModeSuggestions && top.Confidence >= autoThreshold {
 		resp.BestCandidate = &top
 		resp.ShouldAutoCorrect = true
 		resp.Reason = "auto_correct"
+		if top.EditDistance == 1 {
+			resp.Explanation = "Fixed likely typo with high confidence."
+		} else {
+			resp.Explanation = "Auto-corrected based on confidence and profile."
+		}
 		_ = s.store.RecordAutoCorrect()
 		return resp
 	}
@@ -60,13 +77,20 @@ func (s *Server) decide(original string, candidates []types.Candidate, settings 
 		resp.ShouldAutoCorrect = false
 		if settings.Mode == storage.ModeSuggestions {
 			resp.Reason = "suggestions_only_mode"
+			resp.Explanation = "Profile is set to suggestions-only."
 		} else {
 			resp.Reason = "suggestion"
+			if source == "rescore" {
+				resp.Explanation = "Context suggested a better word."
+			} else {
+				resp.Explanation = "Candidate confidence is moderate."
+			}
 		}
 		_ = s.store.RecordSuggestion()
 		return resp
 	}
 
 	resp.Reason = "low_confidence"
+	resp.Explanation = "Confidence too low to suggest a correction."
 	return resp
 }

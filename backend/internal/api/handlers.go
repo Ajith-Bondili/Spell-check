@@ -15,7 +15,7 @@ import (
 	"github.com/Ajith-Bondili/spell-check/internal/types"
 )
 
-const apiVersion = "0.2.0"
+const apiVersion = "0.3.0"
 
 // Server holds API dependencies.
 type Server struct {
@@ -60,6 +60,8 @@ func (s *Server) SpellHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Text = normalizeWord(req.Text)
 	req.Context = strings.TrimSpace(req.Context)
+	req.Domain = normalizeDomain(req.Domain)
+	req.SessionID = strings.TrimSpace(req.SessionID)
 
 	if req.Text == "" {
 		_ = s.store.RecordError()
@@ -68,7 +70,7 @@ func (s *Server) SpellHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = s.store.RecordSpellRequest()
-	settings := s.store.GetSettings()
+	settings, _ := s.store.ResolveSettings(req.Domain)
 
 	if !settings.Enabled {
 		writeJSON(w, http.StatusOK, s.skipResponse(req.Text, "spell", settings.Mode, "disabled", start))
@@ -87,6 +89,12 @@ func (s *Server) SpellHandler(w http.ResponseWriter, r *http.Request) {
 	candidates = s.applyStoreSignals(req.Text, candidates, settings)
 
 	resp := s.decide(req.Text, candidates, settings, "spell")
+	if resp.BestCandidate != nil {
+		resp.CorrectionID = s.store.NewCorrectionID()
+	}
+	if resp.ShouldAutoCorrect {
+		resp.UndoTTLms = s.store.GetUndoTTL()
+	}
 	resp.ProcessingTimeMs = time.Since(start).Milliseconds()
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -109,6 +117,8 @@ func (s *Server) RescoreHandler(w http.ResponseWriter, r *http.Request) {
 
 	req.Text = normalizeWord(req.Text)
 	req.Context = strings.TrimSpace(req.Context)
+	req.Domain = normalizeDomain(req.Domain)
+	req.SessionID = strings.TrimSpace(req.SessionID)
 	if req.Text == "" || req.Context == "" {
 		_ = s.store.RecordError()
 		writeError(w, http.StatusBadRequest, "text and context fields are required")
@@ -116,7 +126,7 @@ func (s *Server) RescoreHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = s.store.RecordRescoreRequest()
-	settings := s.store.GetSettings()
+	settings, _ := s.store.ResolveSettings(req.Domain)
 
 	if !settings.Enabled {
 		writeJSON(w, http.StatusOK, s.skipResponse(req.Text, "rescore", settings.Mode, "disabled", start))
@@ -141,6 +151,12 @@ func (s *Server) RescoreHandler(w http.ResponseWriter, r *http.Request) {
 	rescored = s.applyStoreSignals(req.Text, rescored, settings)
 
 	resp := s.decide(req.Text, rescored, settings, "rescore")
+	if resp.BestCandidate != nil {
+		resp.CorrectionID = s.store.NewCorrectionID()
+	}
+	if resp.ShouldAutoCorrect {
+		resp.UndoTTLms = s.store.GetUndoTTL()
+	}
 	resp.ProcessingTimeMs = time.Since(start).Milliseconds()
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -148,12 +164,14 @@ func (s *Server) RescoreHandler(w http.ResponseWriter, r *http.Request) {
 // HealthHandler checks backend health.
 func (s *Server) HealthHandler(w http.ResponseWriter, r *http.Request) {
 	settings := s.store.GetSettings()
+	profiles := s.store.GetDomainProfiles()
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"status":    "healthy",
-		"version":   apiVersion,
-		"mode":      settings.Mode,
-		"enabled":   settings.Enabled,
-		"state_dir": s.config.StateDir,
+		"status":               "healthy",
+		"version":              apiVersion,
+		"mode":                 settings.Mode,
+		"enabled":              settings.Enabled,
+		"state_dir":            s.config.StateDir,
+		"domain_profile_count": len(profiles),
 	})
 }
 
@@ -219,7 +237,7 @@ func (s *Server) applyStoreSignals(original string, candidates []types.Candidate
 }
 
 func (s *Server) skipResponse(original, source, mode, reason string, start time.Time) types.CorrectionResponse {
-	_ = s.store.RecordSkip()
+	_ = s.store.RecordSkipReason(reason)
 	return types.CorrectionResponse{
 		Original:         original,
 		Candidates:       []types.Candidate{},
@@ -228,6 +246,7 @@ func (s *Server) skipResponse(original, source, mode, reason string, start time.
 		Reason:           reason,
 		DecisionMode:     mode,
 		Skipped:          true,
+		Explanation:      "Skipped to avoid changing protected text.",
 	}
 }
 
@@ -245,6 +264,17 @@ func normalizeWord(word string) string {
 	word = strings.TrimSpace(strings.ToLower(word))
 	word = strings.Trim(word, " \t\n\r.,!?;:\"()[]{}")
 	return word
+}
+
+func normalizeDomain(domain string) string {
+	domain = strings.TrimSpace(strings.ToLower(domain))
+	domain = strings.TrimPrefix(domain, "http://")
+	domain = strings.TrimPrefix(domain, "https://")
+	domain = strings.TrimPrefix(domain, "www.")
+	if idx := strings.IndexRune(domain, '/'); idx >= 0 {
+		domain = domain[:idx]
+	}
+	return strings.Trim(domain, ".")
 }
 
 func (s *Server) syncCustomDictionaryFromStore() {
