@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/Ajith-Bondili/spell-check/internal/storage"
@@ -474,8 +475,16 @@ func (s *Server) PainPointsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	limit := 5
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 && parsed <= 20 {
+			limit = parsed
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"insights": s.store.GetPainPointInsights(5),
+		"insights": s.store.GetPainPointInsights(limit),
+		"limit":    limit,
 	})
 }
 
