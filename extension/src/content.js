@@ -19,6 +19,7 @@ let undoElement = null;
 let undoTimer = null;
 
 const requestCounters = new WeakMap();
+const correctionCooldowns = new WeakMap();
 
 function init() {
     document.addEventListener('input', handleInput, true);
@@ -110,6 +111,13 @@ function isStaleRequest(target, token) {
 }
 
 async function requestCorrection({ target, word, context, useContext }) {
+    if (!hasLetter(word)) {
+        return;
+    }
+    if (isCooldownActive(target, word)) {
+        return;
+    }
+
     const token = nextRequestToken(target);
     const response = await sendMessage({
         type: 'CHECK_TEXT',
@@ -206,6 +214,7 @@ function applyAutoCorrection({ target, word, result }) {
 
     setInputValue(target, correctedValue);
     target.dispatchEvent(new Event('input', { bubbles: true }));
+    markCorrectionCooldown(target, word);
 
     const undoEntry = {
         target,
@@ -339,6 +348,33 @@ function replaceLastWholeWord(text, fromWord, toWord) {
     const escaped = escapeRegex(fromWord);
     const pattern = new RegExp(`\\b${escaped}\\b(?![\\s\\S]*\\b${escaped}\\b)`, 'i');
     return text.replace(pattern, toWord);
+}
+
+function hasLetter(value) {
+    return /[a-zA-Z]/.test(value || '');
+}
+
+function isCooldownActive(target, word) {
+    const normalized = (word || '').toLowerCase();
+    const cooldownMap = correctionCooldowns.get(target);
+    if (!cooldownMap) {
+        return false;
+    }
+    const expiresAt = cooldownMap.get(normalized) || 0;
+    return Date.now() < expiresAt;
+}
+
+function markCorrectionCooldown(target, word) {
+    const normalized = (word || '').toLowerCase();
+    if (!normalized) {
+        return;
+    }
+    let cooldownMap = correctionCooldowns.get(target);
+    if (!cooldownMap) {
+        cooldownMap = new Map();
+        correctionCooldowns.set(target, cooldownMap);
+    }
+    cooldownMap.set(normalized, Date.now() + 2000);
 }
 
 function escapeRegex(value) {
