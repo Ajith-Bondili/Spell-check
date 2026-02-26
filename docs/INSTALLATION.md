@@ -2,207 +2,75 @@
 
 ## Prerequisites
 
-- Go 1.20+ installed
-- Chrome or Arc browser
-- Basic command line knowledge
+- Go 1.24+
+- Chrome/Arc/Chromium browser
 
-## Step 1: Start the Backend Server
-
-The backend server must be running for the extension to work.
+## 1) Start Backend
 
 ```bash
-# Navigate to the project root
-cd /path/to/Spell-check
-
-# Navigate to backend
 cd backend
-
-# Run the server
 go run ./cmd/server/main.go
 ```
 
 You should see:
-```
-🚀 Starting Local Autocorrect Server...
-📝 Configuration loaded (port: 8080)
-📚 Loading spell checker...
-✅ Dictionary loaded in 716.826µs
+- dictionary loaded
+- state store initialized (`data/state`)
+- server listening on `http://127.0.0.1:8080`
 
-✨ Server running on http://127.0.0.1:8080
-```
+## 2) Load Extension
 
-**Keep this terminal window open!** The server needs to stay running.
-
-### Alternative: Build and Run
-
-For production use, build a binary:
-
-```bash
-# Build the server
-go build -o autocorrect-server ./cmd/server
-
-# Run the binary
-./autocorrect-server
-```
-
-## Step 2: Load the Browser Extension
-
-### For Chrome/Arc:
-
-1. Open Chrome and navigate to `chrome://extensions/`
-2. Enable **Developer mode** (toggle in top right)
+1. Open `chrome://extensions/`
+2. Enable **Developer mode**
 3. Click **Load unpacked**
-4. Select the `extension` folder from this project
-5. The extension should now appear in your extensions list
+4. Select the repo’s `extension/` folder
 
-### Verify Installation:
+## 3) Verify Health
 
-1. Click the extension icon in your toolbar
-2. You should see "Backend running (v0.1.0)" status
-3. If it shows "Backend offline", make sure step 1 is complete
+- Click extension icon
+- Popup should show backend online
+- If offline, confirm server is running and `127.0.0.1:8080` is reachable
 
-## Step 3: Test It!
+## 4) Try Autocorrect
 
-### Quick Test:
+1. Open `extension/test.html`
+2. Type typo + space (example: `teh `)
+3. Try context corrections with punctuation
 
-1. Open `extension/test.html` in your browser
-2. Type a typo like "teh" and press SPACE
-3. Watch it auto-correct to "the"!
+## 5) Use New Controls
 
-### Real-World Test:
-
-1. Go to Gmail, Google Docs, or any website
-2. Start typing in a text field
-3. Make intentional typos:
-   - "seperate" → "separate"
-   - "definately" → "definitely"
-   - "occured" → "occurred"
+From popup:
+- toggle enable/disable
+- switch mode (`conservative`, `aggressive`, `suggestions_only`)
+- adjust thresholds
+- add/remove custom words
+- add ignore word or ignore pair
+- inspect/reset stats
+- reload backend state
 
 ## Troubleshooting
 
-### "Backend offline" error
+### Backend offline in popup
 
-**Problem**: Extension can't reach the backend server
+- Ensure backend is running
+- Check `curl http://127.0.0.1:8080/health`
+- Reload extension once
 
-**Solution**:
-1. Make sure the Go server is running (Step 1)
-2. Check that it's listening on port 8080
-3. Test manually: `curl http://127.0.0.1:8080/health`
-4. Check browser console for CORS errors
+### Setting updates fail
 
-### Extension not loading
+- Confirm backend health first
+- Validate threshold values:
+  - `0 <= suggestion_threshold <= auto_correct_threshold <= 1` (except suggestions-only mode flexibility)
+- Keep `max_suggestions` between 1 and 20
 
-**Problem**: Chrome rejects the extension
+### Extension appears loaded but no corrections
 
-**Solution**:
-1. Make sure you selected the `extension` folder, not the root
-2. Check for errors in `chrome://extensions/`
-3. Verify all files exist (manifest.json, src/, public/)
+- Check popup `Enable Autocorrect`
+- Make sure target field is text/textarea/contenteditable (not password field)
+- Inspect page console for content script logs
 
-### Corrections not happening
-
-**Problem**: Typing but nothing gets corrected
-
-**Solution**:
-1. Open browser DevTools (F12)
-2. Look for console messages starting with "🎯 Local Autocorrect"
-3. Check Network tab for failed requests to localhost:8080
-4. Verify the extension is enabled in chrome://extensions
-
-### Permission errors
-
-**Problem**: Extension can't access certain sites
-
-**Solution**:
-1. Some sites (like chrome:// pages) can't run extensions
-2. Try a regular website like gmail.com or docs.google.com
-3. Check if the site blocks content scripts
-
-## Advanced Configuration
-
-### Custom Dictionary
-
-To use your own dictionary:
-
-1. Create a frequency dictionary file:
-   ```
-   word1 frequency1
-   word2 frequency2
-   ```
-
-2. Update `backend/internal/types/config.go`:
-   ```go
-   DictionaryPath: "data/my_custom_dictionary.txt",
-   ```
-
-3. Restart the backend server
-
-### Change Server Port
-
-Edit `backend/internal/types/config.go`:
-
-```go
-Port: 9090,  // Change from 8080
-```
-
-Also update `extension/src/content.js`:
-
-```javascript
-const CONFIG = {
-    backendUrl: 'http://127.0.0.1:9090',  // Match your port
-    // ...
-};
-```
-
-### Disable Auto-Correct (Suggestions Only)
-
-In `backend/internal/types/config.go`:
-
-```go
-AutoCorrectThreshold: 1.1,  // Never auto-correct (max is 1.0)
-SuggestionThreshold:  0.5,  // Show suggestions only
-```
-
-## Development Mode
-
-### Hot Reload Backend
-
-Install `air` for hot reloading:
-
-```bash
-go install github.com/cosmtrek/air@latest
-cd backend
-air
-```
-
-### Debug Extension
-
-1. Open DevTools on any page (F12)
-2. Look for messages starting with 🎯 or other emoji
-3. Use `console.log()` to add your own debugging
-
-### Run Tests
+## Build/Test
 
 ```bash
 cd backend
 go test ./...
 ```
-
-## Next Steps
-
-- See `docs/LEARNING_GUIDE.md` for architecture details
-- See `README.md` for project overview
-- Read `docs/ROADMAP.md` for future features
-
-## Getting Help
-
-If you're stuck:
-
-1. Check the console logs (both backend and browser)
-2. Test the backend directly: `curl -X POST http://127.0.0.1:8080/spell -H "Content-Type: application/json" -d '{"text":"teh"}'`
-3. Verify the extension loaded: chrome://extensions
-4. Open an issue with:
-   - Error messages
-   - Browser version
-   - Go version
-   - What you expected vs what happened

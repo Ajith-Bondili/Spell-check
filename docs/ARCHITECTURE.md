@@ -1,8 +1,13 @@
-# Architecture Guide: Local Autocorrect System
+# Architecture Guide: Local Autocorrect System (v0.2)
 
 ## Overview
 
 Your autocorrect system uses a **modern, layered architecture** combining Clean Architecture principles on the backend with Event-Driven Architecture on the frontend.
+
+The current implementation is fully local and algorithmic:
+- SymSpell for typo candidate generation
+- Rule-based context analyzer for confusables
+- No external model runtime required
 
 ## Architecture Pattern Classification
 
@@ -13,7 +18,7 @@ This system is **NOT** Model-View-Controller because:
 - No traditional "model" layer with database ORM
 - No template-based views
 
-### **INSTEAD: Clean/Hexagonal Architecture + Event-Driven + REST**
+### **INSTEAD: Clean/Hexagonal Architecture + Event-Driven + REST + Local State**
 
 ```
 ┌──────────────────────────────────────────────┐
@@ -22,6 +27,7 @@ This system is **NOT** Model-View-Controller because:
 │  Frontend: Event-Driven (Browser Extension) │
 │  Backend: Clean/Layered Architecture (Go)   │
 │  Communication: REST API (HTTP/JSON)        │
+│  Runtime State: JSON store on local disk    │
 │  Overall Pattern: Microservices-lite        │
 └──────────────────────────────────────────────┘
 ```
@@ -96,6 +102,7 @@ type Server struct {
 - `spellcheck/` - Spell checking algorithm
 - `llm/` - Context analysis, confusables
 - `guardrails/` - Protection logic
+- `storage/` - Persistent JSON runtime state (settings, dictionary, stats, feedback)
 - `types/` - Data structures
 
 **3. Testability**
@@ -154,9 +161,13 @@ User types "teh " → input event
                  ↓
        Extracts word "teh"
                  ↓
-     HTTP POST to /spell
+  Message to background worker
+                 ↓
+     HTTP POST to /spell (from background)
                  ↓
    Backend returns "the"
+                 ↓
+    Background returns result to content script
                  ↓
     Content script auto-corrects
                  ↓
@@ -216,6 +227,27 @@ User types "teh " → input event
 **GET /health**
 - Health check
 - Returns: {status, version}
+
+**GET /settings / PUT /settings**
+- Runtime mode and threshold controls
+
+**GET /dictionary**
+- Returns custom words + ignore rules
+
+**POST /dictionary/words / DELETE /dictionary/words/{word}**
+- Manage custom dictionary entries
+
+**POST /dictionary/ignore**
+- Ignore word or correction pair
+
+**GET /stats / POST /stats/reset**
+- Runtime correction metrics and reset
+
+**POST /feedback**
+- Accept/reject correction feedback for ranking adjustment
+
+**POST /reload**
+- Reload persisted JSON state into runtime
 
 ---
 

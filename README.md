@@ -1,112 +1,105 @@
-# Local Context-Aware Autocorrect System
+# Local Autocorrect (Offline, Context-Aware)
 
-A privacy-first, real-time autocorrect system that runs completely offline using a small local LLM.
+A privacy-first autocorrect system that runs fully on localhost.
 
-## Architecture
+No cloud calls. No remote model dependency. Fast typo correction + rule-based context disambiguation.
+
+## What’s Implemented
 
 ### Backend (Go)
-- **Fast Layer**: SymSpell-based typo correction (<50ms)
-- **Smart Layer**: 1-3B parameter LLM for context-aware disambiguation
-- **HTTP API**: `/spell` (instant) and `/rescore` (contextual)
+- SymSpell fast correction engine (`/spell`)
+- Context-aware rescoring for confusables (`/rescore`)
+- Guardrails for URLs, code-like text, emails, numbers, hashtags, mentions
+- Runtime settings API (`/settings`)
+- User dictionary + ignore rules API (`/dictionary`, `/dictionary/words`, `/dictionary/ignore`)
+- Stats + feedback APIs (`/stats`, `/stats/reset`, `/feedback`)
+- Persistent JSON state store (`backend/data/state`)
 
-### Frontend (Browser Extension)
-- Monitors all text inputs across websites
-- Real-time correction as you type
-- Works in Gmail, Docs, Notion, Discord, ChatGPT, etc.
-
-## How It Works
-
-1. **On space** → Fast spell check (SymSpell)
-2. **On punctuation/pause** → Context-aware LLM rescoring (if needed)
-3. **Auto-correct high confidence**, suggest medium confidence
-4. **Skip URLs, code blocks, passwords**
-
-## Tech Stack
-
-- **Backend**: Go 1.24
-- **Spell Checker**: SymSpell algorithm
-- **LLM**: llama.cpp with 1-3B GGUF models
-- **Frontend**: TypeScript + Manifest V3
-- **Privacy**: 100% offline, zero cloud calls
+### Extension (Manifest V3)
+- Real-time correction on text fields + contenteditable elements
+- Background service worker as API control plane
+- Live settings sync from popup
+- Custom-word management from popup
+- Ignore rules from popup
+- Live stats + reset + backend reload controls from popup
 
 ## Quick Start
 
 ```bash
-# 1. Start the backend server
+# 1) Start backend
 cd backend
 go run ./cmd/server/main.go
 
-# 2. Load extension in Chrome
-# - Open chrome://extensions/
-# - Enable Developer Mode
-# - Click "Load unpacked"
-# - Select the `extension` folder
+# 2) Load extension
+# chrome://extensions -> Developer mode -> Load unpacked -> extension/
 
-# 3. Test it!
-# Open extension/test.html in your browser
-# Type "teh" and press SPACE → watch it become "the"!
+# 3) Test
+# Open extension/test.html and type typos like "teh "
 ```
 
-📖 **Full installation guide**: [docs/INSTALLATION.md](docs/INSTALLATION.md)
+## API Overview
 
-## Current Status
+Core:
+- `GET /health`
+- `POST /spell`
+- `POST /rescore`
 
-✅ **Phase 1-6 Complete**:
-- SymSpell spell checker (0.7ms dictionary load, <1ms lookups)
-- HTTP API server with /spell and /rescore endpoints
-- Browser extension with real-time monitoring
-- **Context-aware correction** (their/there/they're, your/you're, etc.)
-- **Intelligent guardrails** (protects URLs, code, emails, passwords)
-- Auto-correct for high confidence (>90%)
-- Suggestions for medium confidence (>50%)
-- 11 test suites, 29 tests, 100% passing
+Runtime control:
+- `GET /settings`
+- `PUT /settings`
+- `GET /dictionary`
+- `POST /dictionary/words`
+- `DELETE /dictionary/words/{word}`
+- `POST /dictionary/ignore`
+- `GET /stats`
+- `POST /stats/reset`
+- `POST /feedback`
+- `POST /reload`
 
-🚧 **Coming Next**:
-- LLM integration (Ollama) for complex cases
-- Expanded confusables database
-- User dictionary & custom words
-- Statistics dashboard
-- Performance optimization & caching
+See full examples in [docs/API.md](docs/API.md).
 
-## Performance
+## Current Decision Modes
 
-- Dictionary load: **~700µs** (0.7ms)
-- Spell check: **<1ms** per word
-- Auto-correct threshold: **0.9** (90% confidence)
-- Suggestion threshold: **0.5** (50% confidence)
+- `conservative` (default): safer auto-correct behavior
+- `aggressive`: lower auto-correct threshold for speed
+- `suggestions_only`: never auto-apply replacements
 
 ## Project Structure
 
-```
-├── backend/              # Go server
-│   ├── cmd/server/      # Main entry point
+```text
+Spell-check/
+├── backend/
+│   ├── cmd/server/
 │   ├── internal/
-│   │   ├── spellcheck/  # SymSpell implementation
-│   │   ├── llm/         # Context analyzer & confusables
-│   │   ├── guardrails/  # URL/code/email protection
-│   │   ├── api/         # HTTP handlers
-│   │   └── types/       # Data structures
-│   └── data/            # Dictionary files
-├── extension/           # Browser extension
-│   ├── src/            # Content & background scripts
-│   └── public/         # Popup UI & icons
-└── docs/               # Documentation
+│   │   ├── api/
+│   │   ├── guardrails/
+│   │   ├── llm/          # rule-based context logic (no external LLM dependency)
+│   │   ├── spellcheck/
+│   │   ├── storage/      # JSON-backed runtime state
+│   │   └── types/
+│   └── data/
+├── extension/
+│   ├── src/
+│   ├── public/
+│   └── test.html
+└── docs/
 ```
 
-## Documentation
+## Testing
 
-- [📚 Learning Guide](docs/LEARNING_GUIDE.md) - Architecture & concepts
-- [📦 Installation Guide](docs/INSTALLATION.md) - Setup instructions
-- [🧪 Test Page](extension/test.html) - Try it out locally
+```bash
+cd backend
+go test ./...
+```
 
-## Contributing
+## Docs
 
-This is a learning project! Contributions, suggestions, and feedback are welcome.
+- [Installation](docs/INSTALLATION.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [API Reference](docs/API.md)
+- [Roadmap](docs/ROADMAP.md)
+- [Changelog](docs/CHANGELOG.md)
 
 ## License
 
 MIT
-
----
-
-Built with ❤️ for privacy and performance
