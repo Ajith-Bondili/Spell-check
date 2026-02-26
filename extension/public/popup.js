@@ -1,4 +1,5 @@
 const $ = (id) => document.getElementById(id);
+let currentDomain = '';
 
 document.addEventListener('DOMContentLoaded', async () => {
     bindEvents();
@@ -15,11 +16,20 @@ function bindEvents() {
     $('reset-stats').addEventListener('click', resetStats);
     $('reload-state').addEventListener('click', reloadBackendState);
 
+    $('save-domain-profile').addEventListener('click', saveDomainProfile);
+    $('reset-domain-profile').addEventListener('click', resetDomainProfile);
+
     $('auto-threshold').addEventListener('input', () => {
         $('auto-threshold-value').textContent = Number($('auto-threshold').value).toFixed(2);
     });
     $('suggestion-threshold').addEventListener('input', () => {
         $('suggestion-threshold-value').textContent = Number($('suggestion-threshold').value).toFixed(2);
+    });
+    $('domain-auto-threshold').addEventListener('input', () => {
+        $('domain-auto-threshold-value').textContent = Number($('domain-auto-threshold').value).toFixed(2);
+    });
+    $('domain-suggestion-threshold').addEventListener('input', () => {
+        $('domain-suggestion-threshold-value').textContent = Number($('domain-suggestion-threshold').value).toFixed(2);
     });
 }
 
@@ -29,6 +39,8 @@ async function refreshAll() {
         loadSettings(),
         loadDictionary(),
         loadStats(),
+        loadActiveDomainAndProfile(),
+        loadPainPoints(),
     ]);
 }
 
@@ -75,7 +87,7 @@ async function saveSettings() {
         setMessage(`Save failed: ${response.error}`, true);
         return;
     }
-    setMessage('Settings saved');
+    setMessage('Default profile saved');
 }
 
 async function syncSettingsFromBackend() {
@@ -86,6 +98,105 @@ async function syncSettingsFromBackend() {
     }
     await loadSettings();
     setMessage('Settings synced from backend');
+}
+
+async function loadActiveDomainAndProfile() {
+    const domainResp = await sendMessage({ type: 'GET_ACTIVE_DOMAIN' });
+    currentDomain = domainResp?.domain || '';
+    $('current-domain-label').textContent = currentDomain
+        ? `Domain: ${currentDomain}`
+        : 'Domain: unavailable on this page';
+
+    if (!currentDomain) {
+        toggleDomainProfileControls(false);
+        return;
+    }
+
+    toggleDomainProfileControls(true);
+    const profileResp = await sendMessage({
+        type: 'GET_DOMAIN_PROFILE',
+        payload: { domain: currentDomain },
+    });
+
+    if (profileResp?.error || !profileResp?.data?.profile) {
+        setMessage(`Domain profile load failed: ${profileResp?.error || 'unknown'}`, true);
+        return;
+    }
+
+    const { profile, source } = profileResp.data;
+    $('domain-enable-toggle').checked = Boolean(profile.enabled);
+    $('domain-mode-select').value = profile.mode || 'conservative';
+    $('domain-auto-threshold').value = profile.auto_correct_threshold ?? 0.75;
+    $('domain-suggestion-threshold').value = profile.suggestion_threshold ?? 0.5;
+    $('domain-max-suggestions').value = profile.max_suggestions ?? 5;
+    $('domain-respect-slang').checked = Boolean(profile.respect_slang);
+    $('domain-auto-threshold-value').textContent = Number($('domain-auto-threshold').value).toFixed(2);
+    $('domain-suggestion-threshold-value').textContent = Number($('domain-suggestion-threshold').value).toFixed(2);
+
+    if (source === 'default') {
+        setMessage('Using default profile for this domain');
+    }
+}
+
+function toggleDomainProfileControls(enabled) {
+    const ids = [
+        'domain-enable-toggle',
+        'domain-mode-select',
+        'domain-auto-threshold',
+        'domain-suggestion-threshold',
+        'domain-max-suggestions',
+        'domain-respect-slang',
+        'save-domain-profile',
+        'reset-domain-profile',
+    ];
+    ids.forEach((id) => {
+        $(id).disabled = !enabled;
+    });
+}
+
+async function saveDomainProfile() {
+    if (!currentDomain) {
+        setMessage('No active domain available', true);
+        return;
+    }
+
+    const payload = {
+        domain: currentDomain,
+        profile: {
+            enabled: $('domain-enable-toggle').checked,
+            mode: $('domain-mode-select').value,
+            autoCorrectThreshold: Number($('domain-auto-threshold').value),
+            suggestionThreshold: Number($('domain-suggestion-threshold').value),
+            maxSuggestions: Number($('domain-max-suggestions').value),
+            respectSlang: $('domain-respect-slang').checked,
+        },
+    };
+
+    const response = await sendMessage({ type: 'UPDATE_DOMAIN_PROFILE', payload });
+    if (response?.error) {
+        setMessage(`Save domain profile failed: ${response.error}`, true);
+        return;
+    }
+    setMessage(`Saved profile for ${currentDomain}`);
+}
+
+async function resetDomainProfile() {
+    if (!currentDomain) {
+        setMessage('No active domain available', true);
+        return;
+    }
+
+    const response = await sendMessage({
+        type: 'DELETE_DOMAIN_PROFILE',
+        payload: { domain: currentDomain },
+    });
+    if (response?.error) {
+        setMessage(`Reset failed: ${response.error}`, true);
+        return;
+    }
+
+    setMessage(`Reset ${currentDomain} to default profile`);
+    await loadActiveDomainAndProfile();
 }
 
 async function loadDictionary() {
@@ -129,7 +240,7 @@ function renderDictionary(words) {
                 return;
             }
             setMessage(`Removed "${entry.word}"`);
-            loadDictionary();
+            await loadDictionary();
         });
 
         row.appendChild(button);
@@ -173,6 +284,7 @@ async function addIgnoredWord() {
     }
     $('ignore-word-input').value = '';
     setMessage(`Now ignoring "${word}"`);
+    await loadPainPoints();
 }
 
 async function addIgnoredPair() {
@@ -193,7 +305,8 @@ async function addIgnoredPair() {
     }
     $('ignore-original-input').value = '';
     $('ignore-suggestion-input').value = '';
-    setMessage(`Blocked ${original} → ${suggestion}`);
+    setMessage(`Blocked ${original} -> ${suggestion}`);
+    await loadPainPoints();
 }
 
 async function loadStats() {
@@ -210,6 +323,48 @@ async function loadStats() {
     $('stat-skip').textContent = String(stats.skipped || 0);
 }
 
+async function loadPainPoints() {
+    const response = await sendMessage({ type: 'GET_PAIN_POINTS' });
+    if (response?.error) {
+        setMessage(`Pain points failed: ${response.error}`, true);
+        return;
+    }
+    renderPainPoints(response?.data?.insights || {});
+}
+
+function renderPainPoints(insights) {
+    const items = [];
+    (insights.top_undone_pairs || []).forEach((entry) => {
+        items.push(`Undone: ${entry.key} (${entry.count})`);
+    });
+    (insights.skip_reasons || []).forEach((entry) => {
+        items.push(`Skipped: ${entry.key} (${entry.count})`);
+    });
+    (insights.domain_correction_volume || []).forEach((entry) => {
+        items.push(`Domain: ${entry.domain} (${entry.count})`);
+    });
+    (insights.top_ignored_pairs || []).forEach((pair) => {
+        items.push(`Ignored pair: ${pair}`);
+    });
+    (insights.top_ignored_words || []).forEach((word) => {
+        items.push(`Ignored word: ${word}`);
+    });
+
+    const container = $('insights-list');
+    container.innerHTML = '';
+    if (items.length === 0) {
+        container.innerHTML = '<div class="list-item"><span>No insights yet</span></div>';
+        return;
+    }
+
+    items.slice(0, 8).forEach((item) => {
+        const row = document.createElement('div');
+        row.className = 'list-item';
+        row.innerHTML = `<span>${item}</span>`;
+        container.appendChild(row);
+    });
+}
+
 async function resetStats() {
     const response = await sendMessage({ type: 'RESET_STATS' });
     if (response?.error) {
@@ -218,6 +373,7 @@ async function resetStats() {
     }
     setMessage('Stats reset');
     await loadStats();
+    await loadPainPoints();
 }
 
 async function reloadBackendState() {
