@@ -5,6 +5,8 @@
 - Go 1.24+
 - Chrome/Arc/Chromium browser
 
+If you just want the fastest path, use [docs/QUICKSTART.md](QUICKSTART.md).
+
 ## 1) Start Backend
 
 ```bash
@@ -81,3 +83,12 @@ In-page while typing:
 cd backend
 go test ./...
 ```
+
+Or from repo root:
+
+```bash
+make backend-test
+make smoke
+```
+
+More issues and fixes: [docs/TROUBLESHOOTING.md](TROUBLESHOOTING.md)
